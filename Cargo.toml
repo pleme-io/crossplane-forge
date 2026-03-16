@@ -1,0 +1,32 @@
+[package]
+name = "crossplane-forge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89.0"
+description = "Crossplane CRD generator from IaC forge IR"
+homepage = "https://github.com/pleme-io/crossplane-forge"
+repository = "https://github.com/pleme-io/crossplane-forge"
+documentation = "https://docs.rs/crossplane-forge"
+readme = "README.md"
+license = "MIT"
+categories = ["development-tools", "code-generators"]
+keywords = ["crossplane", "kubernetes", "crd", "codegen"]
+
+[lints.clippy]
+pedantic = "warn"
+
+[dependencies]
+iac-forge = { git = "https://github.com/pleme-io/iac-forge" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true
