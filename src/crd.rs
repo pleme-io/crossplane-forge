@@ -11,11 +11,19 @@ pub fn iac_type_to_schema(iac_type: &IacType) -> Value {
         IacType::Integer => json!({ "type": "integer", "format": "int64" }),
         IacType::Float => json!({ "type": "number", "format": "double" }),
         IacType::Boolean => json!({ "type": "boolean" }),
-        IacType::List(inner) | IacType::Set(inner) => {
+        IacType::List(inner) => {
             json!({
                 "type": "array",
                 "items": iac_type_to_schema(inner)
             })
+        }
+        IacType::Set(inner) => {
+            let mut schema = json!({
+                "type": "array",
+                "items": iac_type_to_schema(inner)
+            });
+            schema["uniqueItems"] = Value::Bool(true);
+            schema
         }
         IacType::Map(inner) => {
             json!({
@@ -84,16 +92,15 @@ fn build_for_provider(attributes: &[IacAttribute]) -> (Map<String, Value>, Vec<V
             schema["description"] = Value::String(desc);
         }
         if attr.sensitive {
-            schema["x-kubernetes-preserve-unknown-fields"] = Value::Bool(true);
             let existing_desc = schema
                 .get("description")
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
             let sensitive_desc = if existing_desc.is_empty() {
-                "Sensitive value.".to_string()
+                "[sensitive]".to_string()
             } else {
-                format!("{existing_desc} Sensitive value.")
+                format!("{existing_desc} [sensitive]")
             };
             schema["description"] = Value::String(sensitive_desc);
         }
@@ -182,6 +189,29 @@ pub fn generate_resource_crd(
     group: &str,
     api_version: &str,
 ) -> Result<String, serde_yaml::Error> {
+    generate_resource_crd_with_config(
+        resource,
+        provider_name,
+        group,
+        api_version,
+        &std::collections::HashMap::new(),
+    )
+}
+
+/// Generate a full CRD YAML document for a resource with platform config.
+///
+/// This variant accepts platform config for scope overrides.
+///
+/// # Errors
+///
+/// Returns an error if YAML serialization fails.
+pub fn generate_resource_crd_with_config(
+    resource: &IacResource,
+    provider_name: &str,
+    group: &str,
+    api_version: &str,
+    platform_config: &std::collections::HashMap<String, toml::Value>,
+) -> Result<String, serde_yaml::Error> {
     let kind = iac_forge::to_pascal_case(iac_forge::strip_provider_prefix(
         &resource.name,
         provider_name,
@@ -205,6 +235,46 @@ pub fn generate_resource_crd(
         "properties": at_provider_props
     });
 
+    let conditions_schema = json!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "type": { "type": "string" },
+                "status": { "type": "string" },
+                "lastTransitionTime": { "type": "string", "format": "date-time" },
+                "reason": { "type": "string" },
+                "message": { "type": "string" }
+            },
+            "required": ["type", "status"]
+        }
+    });
+
+    let scope = platform_config
+        .get("crossplane")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get("scope"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Cluster");
+
+    let printer_columns = json!([
+        {
+            "name": "READY",
+            "type": "string",
+            "jsonPath": ".status.conditions[?(@.type=='Ready')].status"
+        },
+        {
+            "name": "SYNCED",
+            "type": "string",
+            "jsonPath": ".status.conditions[?(@.type=='Synced')].status"
+        },
+        {
+            "name": "AGE",
+            "type": "date",
+            "jsonPath": ".metadata.creationTimestamp"
+        }
+    ]);
+
     let crd = json!({
         "apiVersion": "apiextensions.k8s.io/v1",
         "kind": "CustomResourceDefinition",
@@ -219,11 +289,15 @@ pub fn generate_resource_crd(
                 "singular": singular,
                 "categories": ["crossplane", "managed", provider_name]
             },
-            "scope": "Cluster",
+            "scope": scope,
             "versions": [{
                 "name": api_version,
                 "served": true,
                 "storage": true,
+                "additionalPrinterColumns": printer_columns,
+                "subresources": {
+                    "status": {}
+                },
                 "schema": {
                     "openAPIV3Schema": {
                         "type": "object",
@@ -238,7 +312,8 @@ pub fn generate_resource_crd(
                             "status": {
                                 "type": "object",
                                 "properties": {
-                                    "atProvider": at_provider_schema
+                                    "atProvider": at_provider_schema,
+                                    "conditions": conditions_schema
                                 }
                             }
                         }
@@ -501,14 +576,15 @@ mod tests {
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"]["properties"];
 
-        assert_eq!(
-            for_provider["value"]["x-kubernetes-preserve-unknown-fields"],
-            true
+        // Sensitive fields should NOT have x-kubernetes-preserve-unknown-fields
+        assert!(
+            for_provider["value"].get("x-kubernetes-preserve-unknown-fields").is_none(),
+            "sensitive fields must not set x-kubernetes-preserve-unknown-fields"
         );
         let desc = for_provider["value"]["description"]
             .as_str()
             .expect("description");
-        assert!(desc.contains("Sensitive value."));
+        assert!(desc.contains("[sensitive]"));
     }
 
     #[test]
@@ -623,5 +699,145 @@ mod tests {
             "providerconfigs.akeyless.crossplane.io"
         );
         assert_eq!(doc["spec"]["names"]["kind"], "ProviderConfig");
+    }
+
+    #[test]
+    fn sensitive_fields_no_preserve_unknown() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"]["properties"];
+
+        // The sensitive "value" field must NOT have x-kubernetes-preserve-unknown-fields
+        assert!(
+            for_provider["value"].get("x-kubernetes-preserve-unknown-fields").is_none(),
+            "sensitive fields must not have x-kubernetes-preserve-unknown-fields"
+        );
+        // The description should contain [sensitive]
+        let desc = for_provider["value"]["description"].as_str().expect("desc");
+        assert!(desc.contains("[sensitive]"));
+    }
+
+    #[test]
+    fn status_subresource_present() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let version = &doc["spec"]["versions"][0];
+        assert!(
+            version.get("subresources").is_some(),
+            "subresources key must be present"
+        );
+        assert!(
+            version["subresources"].get("status").is_some(),
+            "status subresource must be present"
+        );
+    }
+
+    #[test]
+    fn conditions_schema_in_status() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let status = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"];
+        let conditions = &status["properties"]["conditions"];
+
+        assert_eq!(conditions["type"], "array");
+        let items = &conditions["items"];
+        assert_eq!(items["type"], "object");
+        assert!(items["properties"].get("type").is_some());
+        assert!(items["properties"].get("status").is_some());
+        assert!(items["properties"].get("lastTransitionTime").is_some());
+        assert!(items["properties"].get("reason").is_some());
+        assert!(items["properties"].get("message").is_some());
+
+        let required = items["required"].as_array().expect("required array");
+        let required_names: Vec<&str> = required.iter().filter_map(Value::as_str).collect();
+        assert!(required_names.contains(&"type"));
+        assert!(required_names.contains(&"status"));
+    }
+
+    #[test]
+    fn set_type_has_unique_items() {
+        let schema = iac_type_to_schema(&IacType::Set(Box::new(IacType::String)));
+        assert_eq!(schema["type"], "array");
+        assert_eq!(schema["items"]["type"], "string");
+        assert_eq!(
+            schema["uniqueItems"], true,
+            "Set type must have uniqueItems: true"
+        );
+
+        // List type should NOT have uniqueItems
+        let list_schema = iac_type_to_schema(&IacType::List(Box::new(IacType::String)));
+        assert!(
+            list_schema.get("uniqueItems").is_none(),
+            "List type must not have uniqueItems"
+        );
+    }
+
+    #[test]
+    fn printer_columns_present() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let columns = doc["spec"]["versions"][0]["additionalPrinterColumns"]
+            .as_array()
+            .expect("printer columns array");
+
+        assert_eq!(columns.len(), 3);
+
+        let names: Vec<&str> = columns
+            .iter()
+            .filter_map(|c| c["name"].as_str())
+            .collect();
+        assert!(names.contains(&"READY"));
+        assert!(names.contains(&"SYNCED"));
+        assert!(names.contains(&"AGE"));
+    }
+
+    #[test]
+    fn scope_defaults_to_cluster() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        assert_eq!(doc["spec"]["scope"], "Cluster");
+    }
+
+    #[test]
+    fn scope_from_platform_config() {
+        let resource = make_test_resource();
+        let mut platform_config = HashMap::new();
+        let mut crossplane_table = toml::map::Map::new();
+        crossplane_table.insert(
+            "scope".to_string(),
+            toml::Value::String("Namespaced".to_string()),
+        );
+        platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Table(crossplane_table),
+        );
+
+        let yaml = generate_resource_crd_with_config(
+            &resource,
+            "akeyless",
+            "akeyless.crossplane.io",
+            "v1alpha1",
+            &platform_config,
+        )
+        .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        assert_eq!(doc["spec"]["scope"], "Namespaced");
     }
 }
