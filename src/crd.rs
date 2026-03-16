@@ -451,6 +451,7 @@ mod tests {
                     default_value: None,
                     enum_values: None,
                     read_path: None,
+                    update_only: false,
                 },
                 IacAttribute {
                     api_name: "value".to_string(),
@@ -464,6 +465,7 @@ mod tests {
                     default_value: None,
                     enum_values: None,
                     read_path: None,
+                    update_only: false,
                 },
                 IacAttribute {
                     api_name: "tags".to_string(),
@@ -477,6 +479,7 @@ mod tests {
                     default_value: None,
                     enum_values: None,
                     read_path: None,
+                    update_only: false,
                 },
                 IacAttribute {
                     api_name: "version".to_string(),
@@ -490,6 +493,7 @@ mod tests {
                     default_value: None,
                     enum_values: None,
                     read_path: None,
+                    update_only: false,
                 },
             ],
             identity: IdentityInfo {
