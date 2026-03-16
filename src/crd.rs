@@ -844,4 +844,372 @@ mod tests {
         let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
         assert_eq!(doc["spec"]["scope"], "Namespaced");
     }
+
+    /// Build a resource with ALL IacType variants.
+    fn resource_with_all_types() -> IacResource {
+        IacResource {
+            name: "akeyless_all_types".to_string(),
+            description: "All type variants".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![
+                IacAttribute {
+                    api_name: "str_field".to_string(),
+                    canonical_name: "str_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::String,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "int_field".to_string(),
+                    canonical_name: "int_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Integer,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "float_field".to_string(),
+                    canonical_name: "float_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Float,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "bool_field".to_string(),
+                    canonical_name: "bool_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Boolean,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "list_field".to_string(),
+                    canonical_name: "list_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::List(Box::new(IacType::String)),
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "set_field".to_string(),
+                    canonical_name: "set_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Set(Box::new(IacType::String)),
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "map_field".to_string(),
+                    canonical_name: "map_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Map(Box::new(IacType::String)),
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "object_field".to_string(),
+                    canonical_name: "object_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Object {
+                        name: "Inner".to_string(),
+                        fields: vec![IacAttribute {
+                            api_name: "sub".to_string(),
+                            canonical_name: "sub".to_string(),
+                            description: "sub field".to_string(),
+                            iac_type: IacType::String,
+                            required: true, computed: false, sensitive: false, immutable: false,
+                            default_value: None, enum_values: None, read_path: None, update_only: false,
+                        }],
+                    },
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "enum_field".to_string(),
+                    canonical_name: "enum_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Enum {
+                        values: vec!["a".into(), "b".into()],
+                        underlying: Box::new(IacType::String),
+                    },
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "any_field".to_string(),
+                    canonical_name: "any_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Any,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+            ],
+            identity: IdentityInfo {
+                id_field: "str_field".to_string(),
+                import_field: "str_field".to_string(),
+                force_replace_fields: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn resource_with_all_iac_type_variants() {
+        let resource = resource_with_all_types();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"]["properties"];
+
+        assert_eq!(for_provider["str_field"]["type"], "string");
+        assert_eq!(for_provider["int_field"]["type"], "integer");
+        assert_eq!(for_provider["int_field"]["format"], "int64");
+        assert_eq!(for_provider["float_field"]["type"], "number");
+        assert_eq!(for_provider["float_field"]["format"], "double");
+        assert_eq!(for_provider["bool_field"]["type"], "boolean");
+        assert_eq!(for_provider["list_field"]["type"], "array");
+        assert_eq!(for_provider["set_field"]["type"], "array");
+        assert_eq!(for_provider["set_field"]["uniqueItems"], true);
+        assert_eq!(for_provider["map_field"]["type"], "object");
+        assert!(for_provider["map_field"]["additionalProperties"].is_object());
+        assert_eq!(for_provider["object_field"]["type"], "object");
+        assert!(for_provider["object_field"]["properties"].is_object());
+        assert_eq!(for_provider["enum_field"]["type"], "string");
+        assert!(for_provider["enum_field"]["enum"].is_array());
+        assert_eq!(for_provider["any_field"]["x-kubernetes-preserve-unknown-fields"], true);
+    }
+
+    #[test]
+    fn crd_metadata_has_correct_plural_name() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        // metadata.name should be "staticsecrets.akeyless.crossplane.io"
+        let meta_name = doc["metadata"]["name"].as_str().unwrap();
+        assert_eq!(meta_name, "staticsecrets.akeyless.crossplane.io");
+        // spec.names.plural should be "staticsecrets"
+        assert_eq!(doc["spec"]["names"]["plural"], "staticsecrets");
+        assert_eq!(doc["spec"]["names"]["singular"], "staticsecret");
+    }
+
+    #[test]
+    fn resource_with_no_attributes() {
+        let resource = IacResource {
+            name: "akeyless_empty".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![],
+            identity: IdentityInfo {
+                id_field: "id".to_string(),
+                import_field: "id".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"];
+        // properties should be empty object
+        assert!(for_provider["properties"].as_object().unwrap().is_empty());
+        // required should not be present (empty list is omitted)
+        assert!(for_provider.get("required").is_none());
+    }
+
+    #[test]
+    fn object_type_has_nested_properties_and_required() {
+        let schema = iac_type_to_schema(&IacType::Object {
+            name: "Config".to_string(),
+            fields: vec![
+                IacAttribute {
+                    api_name: "key".to_string(),
+                    canonical_name: "key".to_string(),
+                    description: "Config key".to_string(),
+                    iac_type: IacType::String,
+                    required: true, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "value".to_string(),
+                    canonical_name: "value".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Integer,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+            ],
+        });
+
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"]["key"].is_object());
+        assert_eq!(schema["properties"]["key"]["type"], "string");
+        assert_eq!(schema["properties"]["key"]["description"], "Config key");
+        assert_eq!(schema["properties"]["value"]["type"], "integer");
+        // Required should contain "key" but not "value"
+        let req = schema["required"].as_array().unwrap();
+        let req_names: Vec<&str> = req.iter().filter_map(Value::as_str).collect();
+        assert!(req_names.contains(&"key"));
+        assert!(!req_names.contains(&"value"));
+    }
+
+    #[test]
+    fn generate_all_produces_crd_files() {
+        use super::super::backend::CrossplaneBackend;
+        use iac_forge::backend::Backend;
+        use iac_forge::ir::{AuthInfo, IacDataSource, IacProvider};
+
+        let backend = CrossplaneBackend;
+        let provider = IacProvider {
+            name: "akeyless".to_string(),
+            description: "Akeyless".to_string(),
+            version: "1.0.0".to_string(),
+            auth: AuthInfo::default(),
+            skip_fields: vec![],
+            platform_config: HashMap::new(),
+        };
+
+        let resources = vec![make_test_resource(), IacResource {
+            name: "akeyless_auth_method".to_string(),
+            description: "Auth method".to_string(),
+            category: "auth".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "method".to_string(),
+                canonical_name: "method".to_string(),
+                description: "Method".to_string(),
+                iac_type: IacType::String,
+                required: true, computed: false, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "method".to_string(),
+                import_field: "method".to_string(),
+                force_replace_fields: vec![],
+            },
+        }];
+        let data_sources: Vec<IacDataSource> = vec![];
+
+        let artifacts = backend
+            .generate_all(&provider, &resources, &data_sources)
+            .expect("generate_all should succeed");
+
+        // 2 resource CRDs + 1 provider CRD = 3 (data sources are no-op, tests are no-op)
+        assert_eq!(artifacts.len(), 3);
+        assert!(artifacts.iter().any(|a| a.path.contains("static-secret")));
+        assert!(artifacts.iter().any(|a| a.path.contains("auth-method")));
+        assert!(artifacts.iter().any(|a| a.path.contains("providerconfig")));
+
+        // Verify each CRD is valid YAML
+        for artifact in &artifacts {
+            let _: Value = serde_yaml::from_str(&artifact.content)
+                .unwrap_or_else(|e| panic!("Invalid YAML in {}: {e}", artifact.path));
+        }
+    }
+
+    #[test]
+    fn categories_include_provider_name() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let categories = doc["spec"]["names"]["categories"].as_array().unwrap();
+        let cat_strs: Vec<&str> = categories.iter().filter_map(Value::as_str).collect();
+        assert!(cat_strs.contains(&"crossplane"));
+        assert!(cat_strs.contains(&"managed"));
+        assert!(cat_strs.contains(&"akeyless"));
+    }
+
+    #[test]
+    fn sort_json_keys_deterministic() {
+        let input = json!({"z": 1, "a": 2, "m": {"c": 3, "b": 4}});
+        let sorted = sort_json_keys(&input);
+        let keys: Vec<&String> = sorted.as_object().unwrap().keys().collect();
+        assert_eq!(keys, vec!["a", "m", "z"]);
+        let inner_keys: Vec<&String> = sorted["m"].as_object().unwrap().keys().collect();
+        assert_eq!(inner_keys, vec!["b", "c"]);
+    }
+
+    #[test]
+    fn immutable_field_with_empty_description() {
+        let resource = IacResource {
+            name: "akeyless_nodesc".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "id".to_string(),
+                canonical_name: "id".to_string(),
+                description: "".to_string(),
+                iac_type: IacType::String,
+                required: true, computed: false, sensitive: false, immutable: true,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "id".to_string(),
+                import_field: "id".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"]["properties"];
+
+        // When description is empty, immutable field should still get "(immutable)"
+        let desc = for_provider["id"]["description"].as_str().unwrap();
+        assert_eq!(desc, "(immutable)");
+    }
 }
