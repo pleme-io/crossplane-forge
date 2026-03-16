@@ -97,7 +97,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "iac-forge"
 version = "0.1.0"
-source = "git+https://github.com/pleme-io/iac-forge#a0429cfdc86c405feb0db6c552c6ac056ad55064"
+source = "git+https://github.com/pleme-io/iac-forge#efe513808807b1d35c5b944e20095212f89d4efe"
 dependencies = [
  "openapi-forge",
  "serde",
