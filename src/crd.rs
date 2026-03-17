@@ -140,7 +140,7 @@ fn build_at_provider(attributes: &[IacAttribute]) -> Map<String, Value> {
 #[must_use]
 pub fn derive_group(
     provider_name: &str,
-    platform_config: &std::collections::HashMap<String, toml::Value>,
+    platform_config: &std::collections::BTreeMap<String, toml::Value>,
 ) -> String {
     if let Some(crossplane) = platform_config.get("crossplane") {
         if let Some(table) = crossplane.as_table() {
@@ -160,7 +160,7 @@ pub fn derive_group(
 /// falling back to `v1alpha1`.
 #[must_use]
 pub fn derive_api_version(
-    platform_config: &std::collections::HashMap<String, toml::Value>,
+    platform_config: &std::collections::BTreeMap<String, toml::Value>,
 ) -> String {
     if let Some(crossplane) = platform_config.get("crossplane") {
         if let Some(table) = crossplane.as_table() {
@@ -194,7 +194,7 @@ pub fn generate_resource_crd(
         provider_name,
         group,
         api_version,
-        &std::collections::HashMap::new(),
+        &std::collections::BTreeMap::new(),
     )
 }
 
@@ -210,7 +210,7 @@ pub fn generate_resource_crd_with_config(
     provider_name: &str,
     group: &str,
     api_version: &str,
-    platform_config: &std::collections::HashMap<String, toml::Value>,
+    platform_config: &std::collections::BTreeMap<String, toml::Value>,
 ) -> Result<String, serde_yaml_ng::Error> {
     let kind = iac_forge::to_pascal_case(iac_forge::strip_provider_prefix(
         &resource.name,
@@ -420,7 +420,7 @@ fn sort_json_keys(value: &Value) -> Value {
 mod tests {
     use super::*;
     use iac_forge::ir::{CrudInfo, IacAttribute, IacResource, IacType, IdentityInfo};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     fn make_test_resource() -> IacResource {
         IacResource {
@@ -593,7 +593,7 @@ mod tests {
 
     #[test]
     fn group_derived_from_platform_config() {
-        let mut platform_config = HashMap::new();
+        let mut platform_config = BTreeMap::new();
         let mut crossplane_table = toml::map::Map::new();
         crossplane_table.insert(
             "group".to_string(),
@@ -612,7 +612,7 @@ mod tests {
 
     #[test]
     fn group_defaults_to_provider_name() {
-        let platform_config = HashMap::new();
+        let platform_config = BTreeMap::new();
         assert_eq!(
             derive_group("mycloud", &platform_config),
             "mycloud.crossplane.io"
@@ -621,7 +621,7 @@ mod tests {
 
     #[test]
     fn api_version_from_platform_config() {
-        let mut platform_config = HashMap::new();
+        let mut platform_config = BTreeMap::new();
         let mut crossplane_table = toml::map::Map::new();
         crossplane_table.insert(
             "api_version".to_string(),
@@ -637,7 +637,7 @@ mod tests {
 
     #[test]
     fn api_version_defaults() {
-        let platform_config = HashMap::new();
+        let platform_config = BTreeMap::new();
         assert_eq!(derive_api_version(&platform_config), "v1alpha1");
     }
 
@@ -821,7 +821,7 @@ mod tests {
     #[test]
     fn scope_from_platform_config() {
         let resource = make_test_resource();
-        let mut platform_config = HashMap::new();
+        let mut platform_config = BTreeMap::new();
         let mut crossplane_table = toml::map::Map::new();
         crossplane_table.insert(
             "scope".to_string(),
@@ -1094,7 +1094,7 @@ mod tests {
             version: "1.0.0".to_string(),
             auth: AuthInfo::default(),
             skip_fields: vec![],
-            platform_config: HashMap::new(),
+            platform_config: BTreeMap::new(),
         };
 
         let resources = vec![make_test_resource(), IacResource {
