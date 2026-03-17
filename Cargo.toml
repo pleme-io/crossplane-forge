@@ -19,7 +19,7 @@ pedantic = "warn"
 iac-forge = { git = "https://github.com/pleme-io/iac-forge" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
+serde_yaml_ng = "0.10"
 toml = "0.8"
 
 [dev-dependencies]

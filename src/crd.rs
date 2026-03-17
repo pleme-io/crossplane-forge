@@ -188,7 +188,7 @@ pub fn generate_resource_crd(
     provider_name: &str,
     group: &str,
     api_version: &str,
-) -> Result<String, serde_yaml::Error> {
+) -> Result<String, serde_yaml_ng::Error> {
     generate_resource_crd_with_config(
         resource,
         provider_name,
@@ -211,7 +211,7 @@ pub fn generate_resource_crd_with_config(
     group: &str,
     api_version: &str,
     platform_config: &std::collections::HashMap<String, toml::Value>,
-) -> Result<String, serde_yaml::Error> {
+) -> Result<String, serde_yaml_ng::Error> {
     let kind = iac_forge::to_pascal_case(iac_forge::strip_provider_prefix(
         &resource.name,
         provider_name,
@@ -325,7 +325,7 @@ pub fn generate_resource_crd_with_config(
 
     // Serialize with sorted keys for deterministic output.
     let sorted = sort_json_keys(&crd);
-    serde_yaml::to_string(&sorted)
+    serde_yaml_ng::to_string(&sorted)
 }
 
 /// Generate a `ProviderConfig` CRD YAML for the provider.
@@ -337,7 +337,7 @@ pub fn generate_provider_config_crd(
     provider_name: &str,
     group: &str,
     api_version: &str,
-) -> Result<String, serde_yaml::Error> {
+) -> Result<String, serde_yaml_ng::Error> {
     let kind = "ProviderConfig";
     let singular = "providerconfig";
     let plural = "providerconfigs";
@@ -398,7 +398,7 @@ pub fn generate_provider_config_crd(
     });
 
     let sorted = sort_json_keys(&crd);
-    serde_yaml::to_string(&sorted)
+    serde_yaml_ng::to_string(&sorted)
 }
 
 /// Recursively sort JSON object keys for deterministic output.
@@ -510,7 +510,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         assert_eq!(doc["apiVersion"], "apiextensions.k8s.io/v1");
         assert_eq!(doc["kind"], "CustomResourceDefinition");
         assert_eq!(
@@ -529,7 +529,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"]["properties"];
 
@@ -556,7 +556,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"];
 
@@ -576,7 +576,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"]["properties"];
 
@@ -647,7 +647,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"]["properties"];
 
@@ -695,7 +695,7 @@ mod tests {
             generate_provider_config_crd("akeyless", "akeyless.crossplane.io", "v1alpha1")
                 .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         assert_eq!(doc["apiVersion"], "apiextensions.k8s.io/v1");
         assert_eq!(doc["kind"], "CustomResourceDefinition");
         assert_eq!(
@@ -711,7 +711,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"]["properties"];
 
@@ -731,7 +731,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let version = &doc["spec"]["versions"][0];
         assert!(
             version.get("subresources").is_some(),
@@ -749,7 +749,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let status = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"];
         let conditions = &status["properties"]["conditions"];
 
@@ -792,7 +792,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let columns = doc["spec"]["versions"][0]["additionalPrinterColumns"]
             .as_array()
             .expect("printer columns array");
@@ -814,7 +814,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         assert_eq!(doc["spec"]["scope"], "Cluster");
     }
 
@@ -841,7 +841,7 @@ mod tests {
         )
         .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         assert_eq!(doc["spec"]["scope"], "Namespaced");
     }
 
@@ -971,7 +971,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"]["properties"];
 
@@ -999,7 +999,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         // metadata.name should be "staticsecrets.akeyless.crossplane.io"
         let meta_name = doc["metadata"]["name"].as_str().unwrap();
         assert_eq!(meta_name, "staticsecrets.akeyless.crossplane.io");
@@ -1036,7 +1036,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"];
         // properties should be empty object
@@ -1140,7 +1140,7 @@ mod tests {
 
         // Verify each CRD is valid YAML
         for artifact in &artifacts {
-            let _: Value = serde_yaml::from_str(&artifact.content)
+            let _: Value = serde_yaml_ng::from_str(&artifact.content)
                 .unwrap_or_else(|e| panic!("Invalid YAML in {}: {e}", artifact.path));
         }
     }
@@ -1151,7 +1151,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let categories = doc["spec"]["names"]["categories"].as_array().unwrap();
         let cat_strs: Vec<&str> = categories.iter().filter_map(Value::as_str).collect();
         assert!(cat_strs.contains(&"crossplane"));
@@ -1204,7 +1204,7 @@ mod tests {
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
             .expect("yaml generation");
 
-        let doc: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
         let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
             ["spec"]["properties"]["forProvider"]["properties"];
 
