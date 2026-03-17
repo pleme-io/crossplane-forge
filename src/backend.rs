@@ -113,7 +113,7 @@ impl Backend for CrossplaneBackend {
 mod tests {
     use super::*;
     use iac_forge::ir::{AuthInfo, CrudInfo, IacAttribute, IacType, IdentityInfo};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     fn make_test_provider() -> IacProvider {
         IacProvider {
@@ -127,7 +127,7 @@ mod tests {
                 gateway_env_var: "AKEYLESS_GATEWAY".to_string(),
             },
             skip_fields: vec!["token".to_string()],
-            platform_config: HashMap::new(),
+            platform_config: BTreeMap::new(),
         }
     }
 
