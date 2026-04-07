@@ -141,6 +141,18 @@ fn build_at_provider(attributes: &[IacAttribute]) -> Map<String, Value> {
     properties
 }
 
+/// Look up a string value inside `platform_config["crossplane"][key]`.
+fn crossplane_config_str<'a>(
+    platform_config: &'a BTreeMap<String, toml::Value>,
+    key: &str,
+) -> Option<&'a str> {
+    platform_config
+        .get("crossplane")
+        .and_then(toml::Value::as_table)
+        .and_then(|t| t.get(key))
+        .and_then(toml::Value::as_str)
+}
+
 /// Derive the CRD group from provider platform config or provider name.
 ///
 /// Checks `platform_config["crossplane"]` for a `group` key, falling back
@@ -148,16 +160,10 @@ fn build_at_provider(attributes: &[IacAttribute]) -> Map<String, Value> {
 #[must_use]
 pub fn derive_group(
     provider_name: &str,
-    platform_config: &std::collections::BTreeMap<String, toml::Value>,
+    platform_config: &BTreeMap<String, toml::Value>,
 ) -> String {
-    if let Some(crossplane) = platform_config.get("crossplane")
-        && let Some(table) = crossplane.as_table()
-        && let Some(group) = table.get("group")
-        && let Some(s) = group.as_str()
-    {
-        return s.to_string();
-    }
-    format!("{provider_name}.crossplane.io")
+    crossplane_config_str(platform_config, "group")
+        .map_or_else(|| format!("{provider_name}.crossplane.io"), String::from)
 }
 
 /// Derive the CRD API version from provider platform config.
@@ -165,17 +171,10 @@ pub fn derive_group(
 /// Checks `platform_config["crossplane"]` for an `api_version` key,
 /// falling back to `v1alpha1`.
 #[must_use]
-pub fn derive_api_version(
-    platform_config: &std::collections::BTreeMap<String, toml::Value>,
-) -> String {
-    if let Some(crossplane) = platform_config.get("crossplane")
-        && let Some(table) = crossplane.as_table()
-        && let Some(version) = table.get("api_version")
-        && let Some(s) = version.as_str()
-    {
-        return s.to_string();
-    }
-    "v1alpha1".to_string()
+pub fn derive_api_version(platform_config: &BTreeMap<String, toml::Value>) -> String {
+    crossplane_config_str(platform_config, "api_version")
+        .unwrap_or("v1alpha1")
+        .to_string()
 }
 
 /// Generate a full CRD YAML document for a resource.
@@ -198,7 +197,7 @@ pub fn generate_resource_crd(
         provider_name,
         group,
         api_version,
-        &std::collections::BTreeMap::new(),
+        &BTreeMap::new(),
     )
 }
 
@@ -206,13 +205,8 @@ pub fn generate_resource_crd(
 ///
 /// Checks `platform_config["crossplane"]` for a `scope` key,
 /// falling back to `Cluster`.
-fn derive_scope(platform_config: &std::collections::BTreeMap<String, toml::Value>) -> &str {
-    platform_config
-        .get("crossplane")
-        .and_then(|v| v.as_table())
-        .and_then(|t| t.get("scope"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Cluster")
+fn derive_scope(platform_config: &BTreeMap<String, toml::Value>) -> &str {
+    crossplane_config_str(platform_config, "scope").unwrap_or("Cluster")
 }
 
 /// Build the Crossplane standard conditions JSON schema.
@@ -266,7 +260,7 @@ pub fn generate_resource_crd_with_config(
     provider_name: &str,
     group: &str,
     api_version: &str,
-    platform_config: &std::collections::BTreeMap<String, toml::Value>,
+    platform_config: &BTreeMap<String, toml::Value>,
 ) -> Result<String, CrdError> {
     let kind = iac_forge::to_pascal_case(iac_forge::strip_provider_prefix(
         &resource.name,
