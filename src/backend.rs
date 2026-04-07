@@ -445,4 +445,22 @@ mod tests {
 
         assert_eq!(artifacts[0].path, "akeyless-providerconfig-crd.yaml");
     }
+
+    #[test]
+    fn display_impl() {
+        let backend = CrossplaneBackend;
+        assert_eq!(format!("{backend}"), "crossplane");
+    }
+
+    #[test]
+    fn default_impl() {
+        let backend = CrossplaneBackend::default();
+        assert_eq!(backend.platform(), "crossplane");
+    }
+
+    #[test]
+    fn debug_impl() {
+        let backend = CrossplaneBackend;
+        assert_eq!(format!("{backend:?}"), "CrossplaneBackend");
+    }
 }
