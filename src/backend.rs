@@ -5,7 +5,7 @@ use iac_forge::naming::{strip_provider_prefix, to_kebab_case, to_pascal_case, to
 
 use crate::crd;
 
-/// Crossplane backend — generates Kubernetes CRD YAML from IaC forge IR.
+/// Crossplane backend — generates Kubernetes CRD YAML from `IaC` forge IR.
 pub struct CrossplaneBackend;
 
 /// Naming convention for Crossplane CRD resources.
@@ -31,6 +31,7 @@ impl NamingConvention for CrossplaneNaming {
 }
 
 impl Backend for CrossplaneBackend {
+    #[allow(clippy::unnecessary_literal_bound)]
     fn platform(&self) -> &str {
         "crossplane"
     }
