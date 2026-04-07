@@ -11,6 +11,12 @@ pub enum CrdError {
     JsonConversion(#[from] serde_json::Error),
 }
 
+impl From<CrdError> for iac_forge::error::IacForgeError {
+    fn from(err: CrdError) -> Self {
+        Self::BackendError(err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
