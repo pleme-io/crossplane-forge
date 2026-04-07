@@ -2549,4 +2549,43 @@ mod tests {
             "staticsecrets.akeyless.crossplane.io"
         );
     }
+
+    #[test]
+    fn crossplane_config_str_found() {
+        let mut config = BTreeMap::new();
+        let mut table = toml::map::Map::new();
+        table.insert("group".into(), toml::Value::String("custom.io".into()));
+        config.insert("crossplane".into(), toml::Value::Table(table));
+        assert_eq!(crossplane_config_str(&config, "group"), Some("custom.io"));
+    }
+
+    #[test]
+    fn crossplane_config_str_missing_section() {
+        let config = BTreeMap::new();
+        assert_eq!(crossplane_config_str(&config, "group"), None);
+    }
+
+    #[test]
+    fn crossplane_config_str_missing_key() {
+        let mut config = BTreeMap::new();
+        let table = toml::map::Map::new();
+        config.insert("crossplane".into(), toml::Value::Table(table));
+        assert_eq!(crossplane_config_str(&config, "group"), None);
+    }
+
+    #[test]
+    fn crossplane_config_str_non_table() {
+        let mut config = BTreeMap::new();
+        config.insert("crossplane".into(), toml::Value::Boolean(true));
+        assert_eq!(crossplane_config_str(&config, "group"), None);
+    }
+
+    #[test]
+    fn crossplane_config_str_non_string_value() {
+        let mut config = BTreeMap::new();
+        let mut table = toml::map::Map::new();
+        table.insert("group".into(), toml::Value::Integer(42));
+        config.insert("crossplane".into(), toml::Value::Table(table));
+        assert_eq!(crossplane_config_str(&config, "group"), None);
+    }
 }
