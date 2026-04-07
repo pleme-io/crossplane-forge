@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use iac_forge::ir::{IacAttribute, IacResource, IacType};
 use serde_json::{Map, Value, json};
 
+use crate::error::CrdError;
+
 /// Convert an `IacType` to an `OpenAPI` v3 JSON schema fragment.
 #[must_use]
 pub fn iac_type_to_schema(iac_type: &IacType) -> Value {
@@ -178,13 +180,13 @@ pub fn derive_api_version(
 ///
 /// # Errors
 ///
-/// Returns an error if YAML serialization fails.
+/// Returns a [`CrdError`] if YAML serialization or JSON conversion fails.
 pub fn generate_resource_crd(
     resource: &IacResource,
     provider_name: &str,
     group: &str,
     api_version: &str,
-) -> Result<String, serde_yaml_ng::Error> {
+) -> Result<String, CrdError> {
     generate_resource_crd_with_config(
         resource,
         provider_name,
@@ -252,14 +254,14 @@ fn printer_columns() -> Value {
 ///
 /// # Errors
 ///
-/// Returns an error if YAML serialization fails.
+/// Returns a [`CrdError`] if YAML serialization or JSON conversion fails.
 pub fn generate_resource_crd_with_config(
     resource: &IacResource,
     provider_name: &str,
     group: &str,
     api_version: &str,
     platform_config: &std::collections::BTreeMap<String, toml::Value>,
-) -> Result<String, serde_yaml_ng::Error> {
+) -> Result<String, CrdError> {
     let kind = iac_forge::to_pascal_case(iac_forge::strip_provider_prefix(
         &resource.name,
         provider_name,
@@ -333,20 +335,20 @@ pub fn generate_resource_crd_with_config(
         }
     });
 
-    let sorted = sort_json_keys(&crd);
-    serde_yaml_ng::to_string(&sorted)
+    let sorted = sort_json_keys(&crd)?;
+    Ok(serde_yaml_ng::to_string(&sorted)?)
 }
 
 /// Generate a `ProviderConfig` CRD YAML for the provider.
 ///
 /// # Errors
 ///
-/// Returns an error if YAML serialization fails.
+/// Returns a [`CrdError`] if YAML serialization or JSON conversion fails.
 pub fn generate_provider_config_crd(
     provider_name: &str,
     group: &str,
     api_version: &str,
-) -> Result<String, serde_yaml_ng::Error> {
+) -> Result<String, CrdError> {
     let kind = "ProviderConfig";
     let singular = "providerconfig";
     let plural = "providerconfigs";
@@ -406,22 +408,29 @@ pub fn generate_provider_config_crd(
         }
     });
 
-    let sorted = sort_json_keys(&crd);
-    serde_yaml_ng::to_string(&sorted)
+    let sorted = sort_json_keys(&crd)?;
+    Ok(serde_yaml_ng::to_string(&sorted)?)
 }
 
 /// Recursively sort JSON object keys for deterministic output.
-fn sort_json_keys(value: &Value) -> Value {
+///
+/// # Errors
+///
+/// Returns [`CrdError::JsonConversion`] if a `BTreeMap` cannot be converted
+/// back into a `serde_json::Value` (should not happen in practice).
+fn sort_json_keys(value: &Value) -> Result<Value, CrdError> {
     match value {
         Value::Object(map) => {
             let sorted: BTreeMap<String, Value> = map
                 .iter()
-                .map(|(k, v)| (k.clone(), sort_json_keys(v)))
-                .collect();
-            serde_json::to_value(sorted).unwrap_or_else(|_| value.clone())
+                .map(|(k, v)| Ok((k.clone(), sort_json_keys(v)?)))
+                .collect::<Result<_, CrdError>>()?;
+            Ok(serde_json::to_value(sorted)?)
         }
-        Value::Array(arr) => Value::Array(arr.iter().map(sort_json_keys).collect()),
-        other => other.clone(),
+        Value::Array(arr) => Ok(Value::Array(
+            arr.iter().map(sort_json_keys).collect::<Result<_, _>>()?,
+        )),
+        other => Ok(other.clone()),
     }
 }
 
@@ -1171,7 +1180,7 @@ mod tests {
     #[test]
     fn sort_json_keys_deterministic() {
         let input = json!({"z": 1, "a": 2, "m": {"c": 3, "b": 4}});
-        let sorted = sort_json_keys(&input);
+        let sorted = sort_json_keys(&input).unwrap();
         let keys: Vec<&String> = sorted.as_object().unwrap().keys().collect();
         assert_eq!(keys, vec!["a", "m", "z"]);
         let inner_keys: Vec<&String> = sorted["m"].as_object().unwrap().keys().collect();
@@ -1522,7 +1531,7 @@ mod tests {
             "m": 42,
             "b": "hello"
         });
-        let sorted = sort_json_keys(&input);
+        let sorted = sort_json_keys(&input).unwrap();
         let keys: Vec<&String> = sorted.as_object().unwrap().keys().collect();
         assert_eq!(keys, vec!["a", "b", "m", "z"]);
         assert_eq!(sorted["z"], Value::Null);
@@ -1539,7 +1548,7 @@ mod tests {
                 {"c": 3}
             ]
         });
-        let sorted = sort_json_keys(&input);
+        let sorted = sort_json_keys(&input).unwrap();
         let first = &sorted["items"][0];
         let keys: Vec<&String> = first.as_object().unwrap().keys().collect();
         assert_eq!(keys, vec!["a_key", "z_key"], "nested objects inside arrays should also be sorted");
@@ -1547,23 +1556,23 @@ mod tests {
 
     #[test]
     fn sort_json_keys_scalar_passthrough() {
-        assert_eq!(sort_json_keys(&json!(42)), json!(42));
-        assert_eq!(sort_json_keys(&json!("str")), json!("str"));
-        assert_eq!(sort_json_keys(&json!(true)), json!(true));
-        assert_eq!(sort_json_keys(&json!(null)), json!(null));
+        assert_eq!(sort_json_keys(&json!(42)).unwrap(), json!(42));
+        assert_eq!(sort_json_keys(&json!("str")).unwrap(), json!("str"));
+        assert_eq!(sort_json_keys(&json!(true)).unwrap(), json!(true));
+        assert_eq!(sort_json_keys(&json!(null)).unwrap(), json!(null));
     }
 
     #[test]
     fn sort_json_keys_empty_object() {
         let input = json!({});
-        let sorted = sort_json_keys(&input);
+        let sorted = sort_json_keys(&input).unwrap();
         assert!(sorted.as_object().unwrap().is_empty());
     }
 
     #[test]
     fn sort_json_keys_empty_array() {
         let input = json!([]);
-        let sorted = sort_json_keys(&input);
+        let sorted = sort_json_keys(&input).unwrap();
         assert!(sorted.as_array().unwrap().is_empty());
     }
 
@@ -2423,7 +2432,7 @@ mod tests {
             },
             "a": [{"z": 1, "a": 2}]
         });
-        let sorted = sort_json_keys(&input);
+        let sorted = sort_json_keys(&input).unwrap();
         let top_keys: Vec<&String> = sorted.as_object().unwrap().keys().collect();
         assert_eq!(top_keys, vec!["a", "z"]);
         let z_keys: Vec<&String> = sorted["z"].as_object().unwrap().keys().collect();
