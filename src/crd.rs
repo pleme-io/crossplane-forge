@@ -5,6 +5,35 @@ use serde_json::{Map, Value, json};
 
 use crate::error::CrdError;
 
+/// Derived CRD naming (kind, singular, plural) for a resource.
+struct CrdNames {
+    kind: String,
+    singular: String,
+    plural: String,
+}
+
+impl CrdNames {
+    /// Derive CRD names from the resource name and provider prefix.
+    fn from_resource(resource_name: &str, provider_name: &str) -> Self {
+        let kind = iac_forge::to_pascal_case(iac_forge::strip_provider_prefix(
+            resource_name,
+            provider_name,
+        ));
+        let singular = kind.to_lowercase();
+        let plural = format!("{singular}s");
+        Self {
+            kind,
+            singular,
+            plural,
+        }
+    }
+
+    /// The fully-qualified CRD metadata name (`{plural}.{group}`).
+    fn metadata_name(&self, group: &str) -> String {
+        format!("{}.{group}", self.plural)
+    }
+}
+
 /// Convert an `IacType` to an `OpenAPI` v3 JSON schema fragment.
 #[must_use]
 pub fn iac_type_to_schema(iac_type: &IacType) -> Value {
@@ -260,12 +289,7 @@ pub fn generate_resource_crd_with_config(
     api_version: &str,
     platform_config: &BTreeMap<String, toml::Value>,
 ) -> Result<String, CrdError> {
-    let kind = iac_forge::to_pascal_case(iac_forge::strip_provider_prefix(
-        &resource.name,
-        provider_name,
-    ));
-    let singular = kind.to_lowercase();
-    let plural = format!("{singular}s");
+    let names = CrdNames::from_resource(&resource.name, provider_name);
 
     let (for_provider_props, for_provider_required) = build_for_provider(&resource.attributes);
     let at_provider_props = build_at_provider(&resource.attributes);
@@ -289,14 +313,14 @@ pub fn generate_resource_crd_with_config(
         "apiVersion": "apiextensions.k8s.io/v1",
         "kind": "CustomResourceDefinition",
         "metadata": {
-            "name": format!("{plural}.{group}")
+            "name": names.metadata_name(group)
         },
         "spec": {
             "group": group,
             "names": {
-                "kind": kind,
-                "plural": plural,
-                "singular": singular,
+                "kind": names.kind,
+                "plural": names.plural,
+                "singular": names.singular,
                 "categories": ["crossplane", "managed", provider_name]
             },
             "scope": scope,
@@ -2505,6 +2529,23 @@ mod tests {
         assert_eq!(
             annotated_description("", true, true),
             Some("(immutable) [sensitive]".into())
+        );
+    }
+
+    #[test]
+    fn crd_names_from_resource() {
+        let names = CrdNames::from_resource("akeyless_static_secret", "akeyless");
+        assert_eq!(names.kind, "StaticSecret");
+        assert_eq!(names.singular, "staticsecret");
+        assert_eq!(names.plural, "staticsecrets");
+    }
+
+    #[test]
+    fn crd_names_metadata_name() {
+        let names = CrdNames::from_resource("akeyless_static_secret", "akeyless");
+        assert_eq!(
+            names.metadata_name("akeyless.crossplane.io"),
+            "staticsecrets.akeyless.crossplane.io"
         );
     }
 }
