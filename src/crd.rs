@@ -333,8 +333,7 @@ pub fn generate_resource_crd_with_config(
         }
     });
 
-    let sorted = sort_json_keys(&crd)?;
-    Ok(serde_yaml_ng::to_string(&sorted)?)
+    to_sorted_yaml(&crd)
 }
 
 /// Generate a `ProviderConfig` CRD YAML for the provider.
@@ -406,7 +405,16 @@ pub fn generate_provider_config_crd(
         }
     });
 
-    let sorted = sort_json_keys(&crd)?;
+    to_sorted_yaml(&crd)
+}
+
+/// Sort JSON keys and serialize to YAML for deterministic output.
+///
+/// # Errors
+///
+/// Returns [`CrdError`] if JSON sorting or YAML serialization fails.
+fn to_sorted_yaml(value: &Value) -> Result<String, CrdError> {
+    let sorted = sort_json_keys(value)?;
     Ok(serde_yaml_ng::to_string(&sorted)?)
 }
 
