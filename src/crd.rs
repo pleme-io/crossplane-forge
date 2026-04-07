@@ -94,31 +94,31 @@ fn annotated_description(base: &str, immutable: bool, sensitive: bool) -> Option
     if desc.is_empty() { None } else { Some(desc) }
 }
 
+/// Convert a single attribute to its OpenAPI schema, applying description
+/// annotations (immutable/sensitive) for `forProvider` context.
+fn attr_to_for_provider_schema(attr: &IacAttribute) -> Value {
+    let mut schema = iac_type_to_schema(&attr.iac_type);
+    if let Some(desc) = annotated_description(&attr.description, attr.immutable, attr.sensitive) {
+        schema["description"] = Value::String(desc);
+    }
+    schema
+}
+
 /// Build the `forProvider` schema properties from resource attributes.
 ///
 /// Only includes non-computed (mutable) fields.
 fn build_for_provider(attributes: &[IacAttribute]) -> (Map<String, Value>, Vec<Value>) {
-    let mut properties = Map::new();
-    let mut required = Vec::new();
+    let mutable = attributes.iter().filter(|a| !a.computed);
 
-    for attr in attributes {
-        if attr.computed {
-            continue;
-        }
+    let properties: Map<String, Value> = mutable
+        .clone()
+        .map(|attr| (attr.canonical_name.clone(), attr_to_for_provider_schema(attr)))
+        .collect();
 
-        let mut schema = iac_type_to_schema(&attr.iac_type);
-
-        if let Some(desc) = annotated_description(&attr.description, attr.immutable, attr.sensitive)
-        {
-            schema["description"] = Value::String(desc);
-        }
-
-        properties.insert(attr.canonical_name.clone(), schema);
-
-        if attr.required {
-            required.push(Value::String(attr.canonical_name.clone()));
-        }
-    }
+    let required: Vec<Value> = mutable
+        .filter(|a| a.required)
+        .map(|a| Value::String(a.canonical_name.clone()))
+        .collect();
 
     (properties, required)
 }
@@ -127,18 +127,16 @@ fn build_for_provider(attributes: &[IacAttribute]) -> (Map<String, Value>, Vec<V
 ///
 /// Includes all fields (both mutable and computed) for status observation.
 fn build_at_provider(attributes: &[IacAttribute]) -> Map<String, Value> {
-    let mut properties = Map::new();
-
-    for attr in attributes {
-        let mut schema = iac_type_to_schema(&attr.iac_type);
-        if !attr.description.is_empty() {
-            schema["description"] = Value::String(attr.description.clone());
-        }
-
-        properties.insert(attr.canonical_name.clone(), schema);
-    }
-
-    properties
+    attributes
+        .iter()
+        .map(|attr| {
+            let mut schema = iac_type_to_schema(&attr.iac_type);
+            if !attr.description.is_empty() {
+                schema["description"] = Value::String(attr.description.clone());
+            }
+            (attr.canonical_name.clone(), schema)
+        })
+        .collect()
 }
 
 /// Look up a string value inside `platform_config["crossplane"][key]`.
