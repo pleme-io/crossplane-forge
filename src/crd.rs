@@ -2150,4 +2150,285 @@ mod tests {
         let desc = for_provider["id"]["description"].as_str().unwrap();
         assert_eq!(desc, "(immutable)");
     }
+
+    #[test]
+    fn conditions_schema_structure() {
+        let schema = conditions_schema();
+        assert_eq!(schema["type"], "array");
+        let items = &schema["items"];
+        assert_eq!(items["type"], "object");
+
+        let props = items["properties"].as_object().unwrap();
+        assert!(props.contains_key("type"));
+        assert!(props.contains_key("status"));
+        assert!(props.contains_key("lastTransitionTime"));
+        assert!(props.contains_key("reason"));
+        assert!(props.contains_key("message"));
+
+        assert_eq!(items["properties"]["lastTransitionTime"]["format"], "date-time");
+
+        let req = items["required"].as_array().unwrap();
+        let req_names: Vec<&str> = req.iter().filter_map(Value::as_str).collect();
+        assert_eq!(req_names, vec!["type", "status"]);
+    }
+
+    #[test]
+    fn printer_columns_structure() {
+        let cols = printer_columns();
+        let arr = cols.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+
+        assert_eq!(arr[0]["name"], "READY");
+        assert_eq!(arr[0]["type"], "string");
+        assert!(arr[0]["jsonPath"].as_str().unwrap().contains("Ready"));
+
+        assert_eq!(arr[1]["name"], "SYNCED");
+        assert_eq!(arr[1]["type"], "string");
+        assert!(arr[1]["jsonPath"].as_str().unwrap().contains("Synced"));
+
+        assert_eq!(arr[2]["name"], "AGE");
+        assert_eq!(arr[2]["type"], "date");
+        assert!(arr[2]["jsonPath"].as_str().unwrap().contains("creationTimestamp"));
+    }
+
+    #[test]
+    fn derive_scope_defaults_to_cluster() {
+        let config = BTreeMap::new();
+        assert_eq!(derive_scope(&config), "Cluster");
+    }
+
+    #[test]
+    fn derive_scope_from_config() {
+        let mut config = BTreeMap::new();
+        let mut table = toml::map::Map::new();
+        table.insert("scope".into(), toml::Value::String("Namespaced".into()));
+        config.insert("crossplane".into(), toml::Value::Table(table));
+        assert_eq!(derive_scope(&config), "Namespaced");
+    }
+
+    #[test]
+    fn derive_scope_non_string_falls_back() {
+        let mut config = BTreeMap::new();
+        let mut table = toml::map::Map::new();
+        table.insert("scope".into(), toml::Value::Integer(42));
+        config.insert("crossplane".into(), toml::Value::Table(table));
+        assert_eq!(derive_scope(&config), "Cluster");
+    }
+
+    #[test]
+    fn derive_scope_non_table_falls_back() {
+        let mut config = BTreeMap::new();
+        config.insert("crossplane".into(), toml::Value::Boolean(true));
+        assert_eq!(derive_scope(&config), "Cluster");
+    }
+
+    #[test]
+    fn generate_resource_crd_delegates_to_with_config() {
+        let resource = make_test_resource();
+        let yaml_without = generate_resource_crd(
+            &resource,
+            "akeyless",
+            "akeyless.crossplane.io",
+            "v1alpha1",
+        )
+        .unwrap();
+        let yaml_with = generate_resource_crd_with_config(
+            &resource,
+            "akeyless",
+            "akeyless.crossplane.io",
+            "v1alpha1",
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        pretty_assertions::assert_eq!(yaml_without, yaml_with);
+    }
+
+    #[test]
+    fn build_for_provider_excludes_computed() {
+        let attrs = vec![
+            IacAttribute {
+                api_name: "input".into(),
+                canonical_name: "input".into(),
+                description: "User input".into(),
+                iac_type: IacType::String,
+                required: true, computed: false, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            },
+            IacAttribute {
+                api_name: "computed_id".into(),
+                canonical_name: "computed_id".into(),
+                description: "Auto-generated".into(),
+                iac_type: IacType::String,
+                required: false, computed: true, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            },
+        ];
+        let (props, required) = build_for_provider(&attrs);
+        assert!(props.contains_key("input"));
+        assert!(!props.contains_key("computed_id"));
+        assert_eq!(required.len(), 1);
+        assert_eq!(required[0], "input");
+    }
+
+    #[test]
+    fn build_at_provider_includes_all() {
+        let attrs = vec![
+            IacAttribute {
+                api_name: "input".into(),
+                canonical_name: "input".into(),
+                description: "User input".into(),
+                iac_type: IacType::String,
+                required: true, computed: false, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            },
+            IacAttribute {
+                api_name: "computed_id".into(),
+                canonical_name: "computed_id".into(),
+                description: "Auto-generated".into(),
+                iac_type: IacType::String,
+                required: false, computed: true, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            },
+        ];
+        let props = build_at_provider(&attrs);
+        assert!(props.contains_key("input"));
+        assert!(props.contains_key("computed_id"));
+        assert_eq!(props["input"]["description"], "User input");
+        assert_eq!(props["computed_id"]["description"], "Auto-generated");
+    }
+
+    #[test]
+    fn build_for_provider_empty_attrs() {
+        let (props, required) = build_for_provider(&[]);
+        assert!(props.is_empty());
+        assert!(required.is_empty());
+    }
+
+    #[test]
+    fn build_at_provider_empty_attrs() {
+        let props = build_at_provider(&[]);
+        assert!(props.is_empty());
+    }
+
+    #[test]
+    fn deeply_nested_type_schema() {
+        let deep = IacType::Map(Box::new(IacType::List(Box::new(IacType::Set(
+            Box::new(IacType::Object {
+                name: "Inner".into(),
+                fields: vec![IacAttribute {
+                    api_name: "val".into(),
+                    canonical_name: "val".into(),
+                    description: "".into(),
+                    iac_type: IacType::Enum {
+                        values: vec!["x".into()],
+                        underlying: Box::new(IacType::String),
+                    },
+                    required: true, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                }],
+            }),
+        )))));
+        let schema = iac_type_to_schema(&deep);
+        assert_eq!(schema["type"], "object");
+        let inner = &schema["additionalProperties"];
+        assert_eq!(inner["type"], "array");
+        let set = &inner["items"];
+        assert_eq!(set["type"], "array");
+        assert_eq!(set["uniqueItems"], true);
+        let obj = &set["items"];
+        assert_eq!(obj["type"], "object");
+        assert_eq!(obj["properties"]["val"]["type"], "string");
+        assert!(obj["properties"]["val"]["enum"].is_array());
+    }
+
+    #[test]
+    fn provider_config_crd_version_served_and_storage() {
+        let yaml =
+            generate_provider_config_crd("akeyless", "akeyless.crossplane.io", "v1alpha1")
+                .unwrap();
+        let doc: Value = serde_yaml_ng::from_str(&yaml).unwrap();
+        let version = &doc["spec"]["versions"][0];
+        assert_eq!(version["served"], true);
+        assert_eq!(version["storage"], true);
+        assert_eq!(version["name"], "v1alpha1");
+    }
+
+    #[test]
+    fn provider_config_crd_with_different_group() {
+        let yaml =
+            generate_provider_config_crd("mycloud", "custom.example.io", "v1beta1")
+                .unwrap();
+        let doc: Value = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(doc["metadata"]["name"], "providerconfigs.custom.example.io");
+        assert_eq!(doc["spec"]["group"], "custom.example.io");
+        assert_eq!(doc["spec"]["versions"][0]["name"], "v1beta1");
+        let cats = doc["spec"]["names"]["categories"].as_array().unwrap();
+        let cat_strs: Vec<&str> = cats.iter().filter_map(Value::as_str).collect();
+        assert!(cat_strs.contains(&"mycloud"));
+    }
+
+    #[test]
+    fn resource_crd_different_provider_names() {
+        let resource = IacResource {
+            name: "aws_s3_bucket".into(),
+            description: "S3 bucket".into(),
+            category: "storage".into(),
+            crud: CrudInfo {
+                create_endpoint: "/create".into(),
+                create_schema: "Create".into(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".into(),
+                read_schema: "Read".into(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".into(),
+                delete_schema: "Delete".into(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "bucket".into(),
+                canonical_name: "bucket".into(),
+                description: "Bucket name".into(),
+                iac_type: IacType::String,
+                required: true, computed: false, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "bucket".into(),
+                import_field: "bucket".into(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "aws", "aws.crossplane.io", "v1alpha1")
+            .unwrap();
+        let doc: Value = serde_yaml_ng::from_str(&yaml).unwrap();
+        assert_eq!(doc["spec"]["names"]["kind"], "S3Bucket");
+        assert_eq!(doc["spec"]["names"]["singular"], "s3bucket");
+        assert_eq!(doc["spec"]["names"]["plural"], "s3buckets");
+        assert_eq!(doc["metadata"]["name"], "s3buckets.aws.crossplane.io");
+        let cats = doc["spec"]["names"]["categories"].as_array().unwrap();
+        let cat_strs: Vec<&str> = cats.iter().filter_map(Value::as_str).collect();
+        assert!(cat_strs.contains(&"aws"));
+    }
+
+    #[test]
+    fn sort_json_keys_deeply_nested() {
+        let input = json!({
+            "z": {
+                "b": {
+                    "d": 1,
+                    "a": 2
+                },
+                "a": 3
+            },
+            "a": [{"z": 1, "a": 2}]
+        });
+        let sorted = sort_json_keys(&input);
+        let top_keys: Vec<&String> = sorted.as_object().unwrap().keys().collect();
+        assert_eq!(top_keys, vec!["a", "z"]);
+        let z_keys: Vec<&String> = sorted["z"].as_object().unwrap().keys().collect();
+        assert_eq!(z_keys, vec!["a", "b"]);
+        let b_keys: Vec<&String> = sorted["z"]["b"].as_object().unwrap().keys().collect();
+        assert_eq!(b_keys, vec!["a", "d"]);
+    }
 }
