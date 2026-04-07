@@ -123,7 +123,7 @@ fn annotated_description(base: &str, immutable: bool, sensitive: bool) -> Option
     if desc.is_empty() { None } else { Some(desc) }
 }
 
-/// Convert a single attribute to its OpenAPI schema, applying description
+/// Convert a single attribute to its `OpenAPI` schema, applying description
 /// annotations (immutable/sensitive) for `forProvider` context.
 fn attr_to_for_provider_schema(attr: &IacAttribute) -> Value {
     let mut schema = iac_type_to_schema(&attr.iac_type);
@@ -893,7 +893,8 @@ mod tests {
         assert_eq!(doc["spec"]["scope"], "Namespaced");
     }
 
-    /// Build a resource with ALL IacType variants.
+    /// Build a resource with ALL `IacType` variants.
+    #[allow(clippy::too_many_lines)]
     fn resource_with_all_types() -> IacResource {
         IacResource {
             name: "akeyless_all_types".to_string(),
@@ -914,7 +915,7 @@ mod tests {
                 IacAttribute {
                     api_name: "str_field".to_string(),
                     canonical_name: "str_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -922,7 +923,7 @@ mod tests {
                 IacAttribute {
                     api_name: "int_field".to_string(),
                     canonical_name: "int_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Integer,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -930,7 +931,7 @@ mod tests {
                 IacAttribute {
                     api_name: "float_field".to_string(),
                     canonical_name: "float_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Float,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -938,7 +939,7 @@ mod tests {
                 IacAttribute {
                     api_name: "bool_field".to_string(),
                     canonical_name: "bool_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Boolean,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -946,7 +947,7 @@ mod tests {
                 IacAttribute {
                     api_name: "list_field".to_string(),
                     canonical_name: "list_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::List(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -954,7 +955,7 @@ mod tests {
                 IacAttribute {
                     api_name: "set_field".to_string(),
                     canonical_name: "set_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Set(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -962,7 +963,7 @@ mod tests {
                 IacAttribute {
                     api_name: "map_field".to_string(),
                     canonical_name: "map_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Map(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -970,7 +971,7 @@ mod tests {
                 IacAttribute {
                     api_name: "object_field".to_string(),
                     canonical_name: "object_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Object {
                         name: "Inner".to_string(),
                         fields: vec![IacAttribute {
@@ -988,7 +989,7 @@ mod tests {
                 IacAttribute {
                     api_name: "enum_field".to_string(),
                     canonical_name: "enum_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Enum {
                         values: vec!["a".into(), "b".into()],
                         underlying: Box::new(IacType::String),
@@ -999,7 +1000,7 @@ mod tests {
                 IacAttribute {
                     api_name: "any_field".to_string(),
                     canonical_name: "any_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Any,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -1060,7 +1061,7 @@ mod tests {
     fn resource_with_no_attributes() {
         let resource = IacResource {
             name: "akeyless_empty".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -1109,7 +1110,7 @@ mod tests {
                 IacAttribute {
                     api_name: "value".to_string(),
                     canonical_name: "value".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Integer,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -1221,7 +1222,7 @@ mod tests {
     fn sensitive_field_with_empty_description() {
         let resource = IacResource {
             name: "akeyless_sensitive".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -1237,7 +1238,7 @@ mod tests {
             attributes: vec![IacAttribute {
                 api_name: "secret".to_string(),
                 canonical_name: "secret".to_string(),
-                description: "".to_string(),
+                description: String::new(),
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: true, immutable: false,
                 default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -1264,7 +1265,7 @@ mod tests {
     fn immutable_and_sensitive_field() {
         let resource = IacResource {
             name: "akeyless_both".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -1308,7 +1309,7 @@ mod tests {
     fn immutable_sensitive_empty_description() {
         let resource = IacResource {
             name: "akeyless_immsens".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -1324,7 +1325,7 @@ mod tests {
             attributes: vec![IacAttribute {
                 api_name: "token".to_string(),
                 canonical_name: "token".to_string(),
-                description: "".to_string(),
+                description: String::new(),
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: true, immutable: true,
                 default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -1498,7 +1499,7 @@ mod tests {
                 IacAttribute {
                     api_name: "opt_a".to_string(),
                     canonical_name: "opt_a".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -1506,7 +1507,7 @@ mod tests {
                 IacAttribute {
                     api_name: "opt_b".to_string(),
                     canonical_name: "opt_b".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::Boolean,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -1610,7 +1611,7 @@ mod tests {
     fn at_provider_includes_all_fields() {
         let resource = IacResource {
             name: "akeyless_mixed".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -1679,7 +1680,7 @@ mod tests {
     fn at_provider_no_sensitive_annotation() {
         let resource = IacResource {
             name: "akeyless_atsens".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -1722,7 +1723,7 @@ mod tests {
     fn at_provider_field_with_empty_description() {
         let resource = IacResource {
             name: "akeyless_nodesc2".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -1738,7 +1739,7 @@ mod tests {
             attributes: vec![IacAttribute {
                 api_name: "count".to_string(),
                 canonical_name: "count".to_string(),
-                description: "".to_string(),
+                description: String::new(),
                 iac_type: IacType::Integer,
                 required: false, computed: true, sensitive: false, immutable: false,
                 default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -1910,7 +1911,7 @@ mod tests {
     fn computed_only_field_excluded_from_for_provider() {
         let resource = IacResource {
             name: "akeyless_componly".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -1927,7 +1928,7 @@ mod tests {
                 IacAttribute {
                     api_name: "server_id".to_string(),
                     canonical_name: "server_id".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: true, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -1935,7 +1936,7 @@ mod tests {
                 IacAttribute {
                     api_name: "user_input".to_string(),
                     canonical_name: "user_input".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -2000,7 +2001,7 @@ mod tests {
             fields: vec![IacAttribute {
                 api_name: "val".to_string(),
                 canonical_name: "val".to_string(),
-                description: "".to_string(),
+                description: String::new(),
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: false, immutable: false,
                 default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -2027,7 +2028,7 @@ mod tests {
             fields: vec![IacAttribute {
                 api_name: "x".to_string(),
                 canonical_name: "x".to_string(),
-                description: "".to_string(),
+                description: String::new(),
                 iac_type: IacType::Boolean,
                 required: false, computed: false, sensitive: false, immutable: false,
                 default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -2043,7 +2044,7 @@ mod tests {
     fn multiple_required_fields_ordering() {
         let resource = IacResource {
             name: "akeyless_multi_req".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -2060,7 +2061,7 @@ mod tests {
                 IacAttribute {
                     api_name: "z_field".to_string(),
                     canonical_name: "z_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -2068,7 +2069,7 @@ mod tests {
                 IacAttribute {
                     api_name: "a_field".to_string(),
                     canonical_name: "a_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -2076,7 +2077,7 @@ mod tests {
                 IacAttribute {
                     api_name: "m_field".to_string(),
                     canonical_name: "m_field".to_string(),
-                    description: "".to_string(),
+                    description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
                     default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -2106,7 +2107,7 @@ mod tests {
     fn non_immutable_non_sensitive_field_has_plain_description() {
         let resource = IacResource {
             name: "akeyless_plain".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -2150,7 +2151,7 @@ mod tests {
     fn immutable_field_with_empty_description() {
         let resource = IacResource {
             name: "akeyless_nodesc".to_string(),
-            description: "".to_string(),
+            description: String::new(),
             category: "test".to_string(),
             crud: CrudInfo {
                 create_endpoint: "/create".to_string(),
@@ -2166,7 +2167,7 @@ mod tests {
             attributes: vec![IacAttribute {
                 api_name: "id".to_string(),
                 canonical_name: "id".to_string(),
-                description: "".to_string(),
+                description: String::new(),
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: true,
                 default_value: None, enum_values: None, read_path: None, update_only: false,
@@ -2357,7 +2358,7 @@ mod tests {
                 fields: vec![IacAttribute {
                     api_name: "val".into(),
                     canonical_name: "val".into(),
-                    description: "".into(),
+                    description: String::new(),
                     iac_type: IacType::Enum {
                         values: vec!["x".into()],
                         underlying: Box::new(IacType::String),

@@ -451,6 +451,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::default_constructed_unit_structs)]
     fn default_impl() {
         let backend = CrossplaneBackend::default();
         assert_eq!(backend.platform(), "crossplane");
