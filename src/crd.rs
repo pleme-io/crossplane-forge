@@ -1170,6 +1170,935 @@ mod tests {
     }
 
     #[test]
+    fn sensitive_field_with_empty_description() {
+        let resource = IacResource {
+            name: "akeyless_sensitive".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "secret".to_string(),
+                canonical_name: "secret".to_string(),
+                description: "".to_string(),
+                iac_type: IacType::String,
+                required: false, computed: false, sensitive: true, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "secret".to_string(),
+                import_field: "secret".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"]["properties"];
+
+        let desc = for_provider["secret"]["description"].as_str().unwrap();
+        assert_eq!(desc, "[sensitive]");
+    }
+
+    #[test]
+    fn immutable_and_sensitive_field() {
+        let resource = IacResource {
+            name: "akeyless_both".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "key".to_string(),
+                canonical_name: "key".to_string(),
+                description: "API key".to_string(),
+                iac_type: IacType::String,
+                required: true, computed: false, sensitive: true, immutable: true,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "key".to_string(),
+                import_field: "key".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"]["properties"];
+
+        let desc = for_provider["key"]["description"].as_str().unwrap();
+        assert!(desc.contains("(immutable)"), "should contain immutable marker");
+        assert!(desc.contains("[sensitive]"), "should contain sensitive marker");
+    }
+
+    #[test]
+    fn immutable_sensitive_empty_description() {
+        let resource = IacResource {
+            name: "akeyless_immsens".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "token".to_string(),
+                canonical_name: "token".to_string(),
+                description: "".to_string(),
+                iac_type: IacType::String,
+                required: false, computed: false, sensitive: true, immutable: true,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "token".to_string(),
+                import_field: "token".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"]["properties"];
+
+        let desc = for_provider["token"]["description"].as_str().unwrap();
+        assert!(desc.contains("(immutable)"));
+        assert!(desc.contains("[sensitive]"));
+    }
+
+    #[test]
+    fn derive_group_non_table_crossplane_config() {
+        let mut platform_config = BTreeMap::new();
+        platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::String("not-a-table".to_string()),
+        );
+        assert_eq!(
+            derive_group("mycloud", &platform_config),
+            "mycloud.crossplane.io",
+            "should fall back to default when crossplane config is not a table"
+        );
+    }
+
+    #[test]
+    fn derive_group_missing_group_key() {
+        let mut platform_config = BTreeMap::new();
+        let mut crossplane_table = toml::map::Map::new();
+        crossplane_table.insert(
+            "api_version".to_string(),
+            toml::Value::String("v1beta1".to_string()),
+        );
+        platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Table(crossplane_table),
+        );
+        assert_eq!(
+            derive_group("mycloud", &platform_config),
+            "mycloud.crossplane.io",
+            "should fall back to default when group key is absent"
+        );
+    }
+
+    #[test]
+    fn derive_group_non_string_group_value() {
+        let mut platform_config = BTreeMap::new();
+        let mut crossplane_table = toml::map::Map::new();
+        crossplane_table.insert(
+            "group".to_string(),
+            toml::Value::Integer(42),
+        );
+        platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Table(crossplane_table),
+        );
+        assert_eq!(
+            derive_group("mycloud", &platform_config),
+            "mycloud.crossplane.io",
+            "should fall back to default when group value is not a string"
+        );
+    }
+
+    #[test]
+    fn derive_api_version_non_table_crossplane_config() {
+        let mut platform_config = BTreeMap::new();
+        platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Boolean(true),
+        );
+        assert_eq!(
+            derive_api_version(&platform_config),
+            "v1alpha1",
+            "should fall back to default when crossplane config is not a table"
+        );
+    }
+
+    #[test]
+    fn derive_api_version_missing_key() {
+        let mut platform_config = BTreeMap::new();
+        let crossplane_table = toml::map::Map::new();
+        platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Table(crossplane_table),
+        );
+        assert_eq!(
+            derive_api_version(&platform_config),
+            "v1alpha1",
+            "should fall back to default when api_version key is absent"
+        );
+    }
+
+    #[test]
+    fn derive_api_version_non_string_value() {
+        let mut platform_config = BTreeMap::new();
+        let mut crossplane_table = toml::map::Map::new();
+        crossplane_table.insert(
+            "api_version".to_string(),
+            toml::Value::Integer(1),
+        );
+        platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Table(crossplane_table),
+        );
+        assert_eq!(
+            derive_api_version(&platform_config),
+            "v1alpha1",
+            "should fall back to default when api_version value is not a string"
+        );
+    }
+
+    #[test]
+    fn nested_list_of_lists() {
+        let schema = iac_type_to_schema(&IacType::List(Box::new(
+            IacType::List(Box::new(IacType::Integer)),
+        )));
+        assert_eq!(schema["type"], "array");
+        assert_eq!(schema["items"]["type"], "array");
+        assert_eq!(schema["items"]["items"]["type"], "integer");
+    }
+
+    #[test]
+    fn map_of_sets() {
+        let schema = iac_type_to_schema(&IacType::Map(Box::new(
+            IacType::Set(Box::new(IacType::String)),
+        )));
+        assert_eq!(schema["type"], "object");
+        let inner = &schema["additionalProperties"];
+        assert_eq!(inner["type"], "array");
+        assert_eq!(inner["uniqueItems"], true);
+        assert_eq!(inner["items"]["type"], "string");
+    }
+
+    #[test]
+    fn list_of_objects() {
+        let schema = iac_type_to_schema(&IacType::List(Box::new(IacType::Object {
+            name: "Item".to_string(),
+            fields: vec![IacAttribute {
+                api_name: "id".to_string(),
+                canonical_name: "id".to_string(),
+                description: "Item ID".to_string(),
+                iac_type: IacType::Integer,
+                required: true, computed: false, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+        })));
+        assert_eq!(schema["type"], "array");
+        assert_eq!(schema["items"]["type"], "object");
+        assert_eq!(schema["items"]["properties"]["id"]["type"], "integer");
+        let req = schema["items"]["required"].as_array().unwrap();
+        assert!(req.iter().any(|v| v == "id"));
+    }
+
+    #[test]
+    fn object_with_no_required_fields() {
+        let schema = iac_type_to_schema(&IacType::Object {
+            name: "Config".to_string(),
+            fields: vec![
+                IacAttribute {
+                    api_name: "opt_a".to_string(),
+                    canonical_name: "opt_a".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::String,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "opt_b".to_string(),
+                    canonical_name: "opt_b".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::Boolean,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+            ],
+        });
+        assert_eq!(schema["type"], "object");
+        assert!(schema.get("required").is_none(), "required should be omitted when no fields are required");
+        assert!(schema["properties"]["opt_a"].is_object());
+        assert!(schema["properties"]["opt_b"].is_object());
+    }
+
+    #[test]
+    fn object_with_empty_fields() {
+        let schema = iac_type_to_schema(&IacType::Object {
+            name: "Empty".to_string(),
+            fields: vec![],
+        });
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"].as_object().unwrap().is_empty());
+        assert!(schema.get("required").is_none());
+    }
+
+    #[test]
+    fn enum_with_integer_underlying() {
+        let schema = iac_type_to_schema(&IacType::Enum {
+            values: vec!["1".into(), "2".into(), "3".into()],
+            underlying: Box::new(IacType::Integer),
+        });
+        assert_eq!(schema["type"], "integer");
+        assert_eq!(schema["format"], "int64");
+        let enum_vals = schema["enum"].as_array().unwrap();
+        assert_eq!(enum_vals.len(), 3);
+    }
+
+    #[test]
+    fn enum_with_empty_values() {
+        let schema = iac_type_to_schema(&IacType::Enum {
+            values: vec![],
+            underlying: Box::new(IacType::String),
+        });
+        assert_eq!(schema["type"], "string");
+        let enum_vals = schema["enum"].as_array().unwrap();
+        assert!(enum_vals.is_empty());
+    }
+
+    #[test]
+    fn sort_json_keys_with_null_and_scalars() {
+        let input = json!({
+            "z": null,
+            "a": true,
+            "m": 42,
+            "b": "hello"
+        });
+        let sorted = sort_json_keys(&input);
+        let keys: Vec<&String> = sorted.as_object().unwrap().keys().collect();
+        assert_eq!(keys, vec!["a", "b", "m", "z"]);
+        assert_eq!(sorted["z"], Value::Null);
+        assert_eq!(sorted["a"], true);
+        assert_eq!(sorted["m"], 42);
+        assert_eq!(sorted["b"], "hello");
+    }
+
+    #[test]
+    fn sort_json_keys_with_nested_arrays_of_objects() {
+        let input = json!({
+            "items": [
+                {"z_key": 1, "a_key": 2},
+                {"c": 3}
+            ]
+        });
+        let sorted = sort_json_keys(&input);
+        let first = &sorted["items"][0];
+        let keys: Vec<&String> = first.as_object().unwrap().keys().collect();
+        assert_eq!(keys, vec!["a_key", "z_key"], "nested objects inside arrays should also be sorted");
+    }
+
+    #[test]
+    fn sort_json_keys_scalar_passthrough() {
+        assert_eq!(sort_json_keys(&json!(42)), json!(42));
+        assert_eq!(sort_json_keys(&json!("str")), json!("str"));
+        assert_eq!(sort_json_keys(&json!(true)), json!(true));
+        assert_eq!(sort_json_keys(&json!(null)), json!(null));
+    }
+
+    #[test]
+    fn sort_json_keys_empty_object() {
+        let input = json!({});
+        let sorted = sort_json_keys(&input);
+        assert!(sorted.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn sort_json_keys_empty_array() {
+        let input = json!([]);
+        let sorted = sort_json_keys(&input);
+        assert!(sorted.as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn at_provider_includes_all_fields() {
+        let resource = IacResource {
+            name: "akeyless_mixed".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![
+                IacAttribute {
+                    api_name: "name".to_string(),
+                    canonical_name: "name".to_string(),
+                    description: "The name".to_string(),
+                    iac_type: IacType::String,
+                    required: true, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "id".to_string(),
+                    canonical_name: "id".to_string(),
+                    description: "The id".to_string(),
+                    iac_type: IacType::String,
+                    required: false, computed: true, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "secret_val".to_string(),
+                    canonical_name: "secret_val".to_string(),
+                    description: "A secret".to_string(),
+                    iac_type: IacType::String,
+                    required: false, computed: false, sensitive: true, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+            ],
+            identity: IdentityInfo {
+                id_field: "id".to_string(),
+                import_field: "id".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let at_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["status"]["properties"]["atProvider"]["properties"];
+
+        assert!(at_provider.get("name").is_some(), "atProvider should include mutable fields");
+        assert!(at_provider.get("id").is_some(), "atProvider should include computed fields");
+        assert!(at_provider.get("secret_val").is_some(), "atProvider should include sensitive fields");
+
+        let at_desc = at_provider["name"]["description"].as_str().unwrap();
+        assert_eq!(at_desc, "The name", "atProvider should preserve description");
+        assert!(
+            !at_desc.contains("(immutable)"),
+            "atProvider should NOT add immutable marker"
+        );
+    }
+
+    #[test]
+    fn at_provider_no_sensitive_annotation() {
+        let resource = IacResource {
+            name: "akeyless_atsens".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "secret".to_string(),
+                canonical_name: "secret".to_string(),
+                description: "Secret value".to_string(),
+                iac_type: IacType::String,
+                required: false, computed: false, sensitive: true, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "secret".to_string(),
+                import_field: "secret".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let at_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["status"]["properties"]["atProvider"]["properties"];
+
+        let desc = at_provider["secret"]["description"].as_str().unwrap();
+        assert_eq!(desc, "Secret value", "atProvider should NOT add [sensitive] annotation");
+    }
+
+    #[test]
+    fn at_provider_field_with_empty_description() {
+        let resource = IacResource {
+            name: "akeyless_nodesc2".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "count".to_string(),
+                canonical_name: "count".to_string(),
+                description: "".to_string(),
+                iac_type: IacType::Integer,
+                required: false, computed: true, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "count".to_string(),
+                import_field: "count".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let at_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["status"]["properties"]["atProvider"]["properties"];
+
+        assert!(
+            at_provider["count"].get("description").is_none(),
+            "should not add description key when description is empty"
+        );
+        assert_eq!(at_provider["count"]["type"], "integer");
+    }
+
+    #[test]
+    fn provider_config_crd_structure() {
+        let yaml = generate_provider_config_crd("akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let spec_schema = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"];
+        let credentials = &spec_schema["properties"]["credentials"];
+
+        assert_eq!(credentials["type"], "object");
+
+        let source = &credentials["properties"]["source"];
+        assert_eq!(source["type"], "string");
+        let source_enum = source["enum"].as_array().unwrap();
+        let enum_vals: Vec<&str> = source_enum.iter().filter_map(Value::as_str).collect();
+        assert!(enum_vals.contains(&"None"));
+        assert!(enum_vals.contains(&"Secret"));
+
+        let secret_ref = &credentials["properties"]["secretRef"];
+        assert_eq!(secret_ref["type"], "object");
+        let sr_required = secret_ref["required"].as_array().unwrap();
+        let sr_names: Vec<&str> = sr_required.iter().filter_map(Value::as_str).collect();
+        assert!(sr_names.contains(&"name"));
+        assert!(sr_names.contains(&"namespace"));
+        assert!(sr_names.contains(&"key"));
+
+        let cred_required = credentials["required"].as_array().unwrap();
+        let cred_names: Vec<&str> = cred_required.iter().filter_map(Value::as_str).collect();
+        assert!(cred_names.contains(&"source"));
+
+        let spec_required = spec_schema["required"].as_array().unwrap();
+        let spec_names: Vec<&str> = spec_required.iter().filter_map(Value::as_str).collect();
+        assert!(spec_names.contains(&"credentials"));
+    }
+
+    #[test]
+    fn provider_config_crd_scope_is_cluster() {
+        let yaml = generate_provider_config_crd("akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+        assert_eq!(doc["spec"]["scope"], "Cluster");
+    }
+
+    #[test]
+    fn provider_config_crd_categories() {
+        let yaml = generate_provider_config_crd("akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let categories = doc["spec"]["names"]["categories"].as_array().unwrap();
+        let cat_strs: Vec<&str> = categories.iter().filter_map(Value::as_str).collect();
+        assert!(cat_strs.contains(&"crossplane"));
+        assert!(cat_strs.contains(&"provider"));
+        assert!(cat_strs.contains(&"akeyless"));
+    }
+
+    #[test]
+    fn generate_resource_crd_with_config_ignores_non_crossplane_keys() {
+        let resource = make_test_resource();
+        let mut platform_config = BTreeMap::new();
+        let mut terraform_table = toml::map::Map::new();
+        terraform_table.insert(
+            "scope".to_string(),
+            toml::Value::String("Namespaced".to_string()),
+        );
+        platform_config.insert(
+            "terraform".to_string(),
+            toml::Value::Table(terraform_table),
+        );
+
+        let yaml = generate_resource_crd_with_config(
+            &resource,
+            "akeyless",
+            "akeyless.crossplane.io",
+            "v1alpha1",
+            &platform_config,
+        )
+        .expect("yaml generation");
+
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+        assert_eq!(
+            doc["spec"]["scope"], "Cluster",
+            "non-crossplane config keys should not affect scope"
+        );
+    }
+
+    #[test]
+    fn scope_non_string_falls_back_to_cluster() {
+        let resource = make_test_resource();
+        let mut platform_config = BTreeMap::new();
+        let mut crossplane_table = toml::map::Map::new();
+        crossplane_table.insert(
+            "scope".to_string(),
+            toml::Value::Integer(0),
+        );
+        platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Table(crossplane_table),
+        );
+
+        let yaml = generate_resource_crd_with_config(
+            &resource,
+            "akeyless",
+            "akeyless.crossplane.io",
+            "v1alpha1",
+            &platform_config,
+        )
+        .expect("yaml generation");
+
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+        assert_eq!(
+            doc["spec"]["scope"], "Cluster",
+            "non-string scope should fall back to Cluster"
+        );
+    }
+
+    #[test]
+    fn crd_version_served_and_storage() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+        let version = &doc["spec"]["versions"][0];
+        assert_eq!(version["served"], true);
+        assert_eq!(version["storage"], true);
+        assert_eq!(version["name"], "v1alpha1");
+    }
+
+    #[test]
+    fn crd_spec_requires_for_provider() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+        let spec = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"];
+        let required = spec["required"].as_array().unwrap();
+        let names: Vec<&str> = required.iter().filter_map(Value::as_str).collect();
+        assert!(names.contains(&"forProvider"));
+    }
+
+    #[test]
+    fn computed_only_field_excluded_from_for_provider() {
+        let resource = IacResource {
+            name: "akeyless_componly".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![
+                IacAttribute {
+                    api_name: "server_id".to_string(),
+                    canonical_name: "server_id".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::String,
+                    required: false, computed: true, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "user_input".to_string(),
+                    canonical_name: "user_input".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::String,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+            ],
+            identity: IdentityInfo {
+                id_field: "server_id".to_string(),
+                import_field: "server_id".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"]["properties"];
+        assert!(for_provider.get("server_id").is_none(), "computed-only field should be excluded from forProvider");
+        assert!(for_provider.get("user_input").is_some(), "non-computed field should be included");
+
+        let at_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["status"]["properties"]["atProvider"]["properties"];
+        assert!(at_provider.get("server_id").is_some(), "computed field should be in atProvider");
+        assert!(at_provider.get("user_input").is_some(), "all fields should be in atProvider");
+    }
+
+    #[test]
+    fn only_one_version_entry() {
+        let resource = make_test_resource();
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let versions = doc["spec"]["versions"].as_array().unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[test]
+    fn resource_crd_yaml_is_deterministic() {
+        let resource = make_test_resource();
+        let yaml1 = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("first gen");
+        let yaml2 = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("second gen");
+        assert_eq!(yaml1, yaml2, "repeated generation should produce identical output");
+    }
+
+    #[test]
+    fn provider_config_crd_yaml_is_deterministic() {
+        let yaml1 = generate_provider_config_crd("akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("first gen");
+        let yaml2 = generate_provider_config_crd("akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("second gen");
+        assert_eq!(yaml1, yaml2, "repeated generation should produce identical output");
+    }
+
+    #[test]
+    fn map_of_objects() {
+        let schema = iac_type_to_schema(&IacType::Map(Box::new(IacType::Object {
+            name: "Entry".to_string(),
+            fields: vec![IacAttribute {
+                api_name: "val".to_string(),
+                canonical_name: "val".to_string(),
+                description: "".to_string(),
+                iac_type: IacType::String,
+                required: false, computed: false, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+        })));
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["additionalProperties"]["type"], "object");
+        assert!(schema["additionalProperties"]["properties"]["val"].is_object());
+    }
+
+    #[test]
+    fn set_of_integers() {
+        let schema = iac_type_to_schema(&IacType::Set(Box::new(IacType::Integer)));
+        assert_eq!(schema["type"], "array");
+        assert_eq!(schema["items"]["type"], "integer");
+        assert_eq!(schema["items"]["format"], "int64");
+        assert_eq!(schema["uniqueItems"], true);
+    }
+
+    #[test]
+    fn object_field_description_empty_omits_key() {
+        let schema = iac_type_to_schema(&IacType::Object {
+            name: "NoDesc".to_string(),
+            fields: vec![IacAttribute {
+                api_name: "x".to_string(),
+                canonical_name: "x".to_string(),
+                description: "".to_string(),
+                iac_type: IacType::Boolean,
+                required: false, computed: false, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+        });
+        assert!(
+            schema["properties"]["x"].get("description").is_none(),
+            "should not add description when empty"
+        );
+    }
+
+    #[test]
+    fn multiple_required_fields_ordering() {
+        let resource = IacResource {
+            name: "akeyless_multi_req".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![
+                IacAttribute {
+                    api_name: "z_field".to_string(),
+                    canonical_name: "z_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::String,
+                    required: true, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "a_field".to_string(),
+                    canonical_name: "a_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::String,
+                    required: true, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+                IacAttribute {
+                    api_name: "m_field".to_string(),
+                    canonical_name: "m_field".to_string(),
+                    description: "".to_string(),
+                    iac_type: IacType::String,
+                    required: false, computed: false, sensitive: false, immutable: false,
+                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                },
+            ],
+            identity: IdentityInfo {
+                id_field: "z_field".to_string(),
+                import_field: "z_field".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"];
+        let required = for_provider["required"].as_array().unwrap();
+        let names: Vec<&str> = required.iter().filter_map(Value::as_str).collect();
+        assert!(names.contains(&"z_field"));
+        assert!(names.contains(&"a_field"));
+        assert!(!names.contains(&"m_field"));
+    }
+
+    #[test]
+    fn non_immutable_non_sensitive_field_has_plain_description() {
+        let resource = IacResource {
+            name: "akeyless_plain".to_string(),
+            description: "".to_string(),
+            category: "test".to_string(),
+            crud: CrudInfo {
+                create_endpoint: "/create".to_string(),
+                create_schema: "Create".to_string(),
+                update_endpoint: None,
+                update_schema: None,
+                read_endpoint: "/read".to_string(),
+                read_schema: "Read".to_string(),
+                read_response_schema: None,
+                delete_endpoint: "/delete".to_string(),
+                delete_schema: "Delete".to_string(),
+            },
+            attributes: vec![IacAttribute {
+                api_name: "tags".to_string(),
+                canonical_name: "tags".to_string(),
+                description: "Resource tags".to_string(),
+                iac_type: IacType::List(Box::new(IacType::String)),
+                required: false, computed: false, sensitive: false, immutable: false,
+                default_value: None, enum_values: None, read_path: None, update_only: false,
+            }],
+            identity: IdentityInfo {
+                id_field: "tags".to_string(),
+                import_field: "tags".to_string(),
+                force_replace_fields: vec![],
+            },
+        };
+
+        let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
+            .expect("yaml generation");
+        let doc: Value = serde_yaml_ng::from_str(&yaml).expect("parse yaml");
+
+        let for_provider = &doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+            ["spec"]["properties"]["forProvider"]["properties"];
+        let desc = for_provider["tags"]["description"].as_str().unwrap();
+        assert_eq!(desc, "Resource tags");
+        assert!(!desc.contains("(immutable)"));
+        assert!(!desc.contains("[sensitive]"));
+    }
+
+    #[test]
     fn immutable_field_with_empty_description() {
         let resource = IacResource {
             name: "akeyless_nodesc".to_string(),
