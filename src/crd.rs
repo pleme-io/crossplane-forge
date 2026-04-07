@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use iac_forge::ir::{IacAttribute, IacResource, IacType};
 use serde_json::{Map, Value, json};
 
-/// Convert an `IacType` to an OpenAPI v3 JSON schema fragment.
+/// Convert an `IacType` to an `OpenAPI` v3 JSON schema fragment.
 #[must_use]
 pub fn iac_type_to_schema(iac_type: &IacType) -> Value {
     match iac_type {
@@ -142,14 +142,12 @@ pub fn derive_group(
     provider_name: &str,
     platform_config: &std::collections::BTreeMap<String, toml::Value>,
 ) -> String {
-    if let Some(crossplane) = platform_config.get("crossplane") {
-        if let Some(table) = crossplane.as_table() {
-            if let Some(group) = table.get("group") {
-                if let Some(s) = group.as_str() {
-                    return s.to_string();
-                }
-            }
-        }
+    if let Some(crossplane) = platform_config.get("crossplane")
+        && let Some(table) = crossplane.as_table()
+        && let Some(group) = table.get("group")
+        && let Some(s) = group.as_str()
+    {
+        return s.to_string();
     }
     format!("{provider_name}.crossplane.io")
 }
@@ -162,14 +160,12 @@ pub fn derive_group(
 pub fn derive_api_version(
     platform_config: &std::collections::BTreeMap<String, toml::Value>,
 ) -> String {
-    if let Some(crossplane) = platform_config.get("crossplane") {
-        if let Some(table) = crossplane.as_table() {
-            if let Some(version) = table.get("api_version") {
-                if let Some(s) = version.as_str() {
-                    return s.to_string();
-                }
-            }
-        }
+    if let Some(crossplane) = platform_config.get("crossplane")
+        && let Some(table) = crossplane.as_table()
+        && let Some(version) = table.get("api_version")
+        && let Some(s) = version.as_str()
+    {
+        return s.to_string();
     }
     "v1alpha1".to_string()
 }
@@ -196,6 +192,58 @@ pub fn generate_resource_crd(
         api_version,
         &std::collections::BTreeMap::new(),
     )
+}
+
+/// Derive the CRD scope from platform config.
+///
+/// Checks `platform_config["crossplane"]` for a `scope` key,
+/// falling back to `Cluster`.
+fn derive_scope(platform_config: &std::collections::BTreeMap<String, toml::Value>) -> &str {
+    platform_config
+        .get("crossplane")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get("scope"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Cluster")
+}
+
+/// Build the Crossplane standard conditions JSON schema.
+fn conditions_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "type": { "type": "string" },
+                "status": { "type": "string" },
+                "lastTransitionTime": { "type": "string", "format": "date-time" },
+                "reason": { "type": "string" },
+                "message": { "type": "string" }
+            },
+            "required": ["type", "status"]
+        }
+    })
+}
+
+/// Build the standard Crossplane printer columns (READY, SYNCED, AGE).
+fn printer_columns() -> Value {
+    json!([
+        {
+            "name": "READY",
+            "type": "string",
+            "jsonPath": ".status.conditions[?(@.type=='Ready')].status"
+        },
+        {
+            "name": "SYNCED",
+            "type": "string",
+            "jsonPath": ".status.conditions[?(@.type=='Synced')].status"
+        },
+        {
+            "name": "AGE",
+            "type": "date",
+            "jsonPath": ".metadata.creationTimestamp"
+        }
+    ])
 }
 
 /// Generate a full CRD YAML document for a resource with platform config.
@@ -235,45 +283,7 @@ pub fn generate_resource_crd_with_config(
         "properties": at_provider_props
     });
 
-    let conditions_schema = json!({
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "type": { "type": "string" },
-                "status": { "type": "string" },
-                "lastTransitionTime": { "type": "string", "format": "date-time" },
-                "reason": { "type": "string" },
-                "message": { "type": "string" }
-            },
-            "required": ["type", "status"]
-        }
-    });
-
-    let scope = platform_config
-        .get("crossplane")
-        .and_then(|v| v.as_table())
-        .and_then(|t| t.get("scope"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Cluster");
-
-    let printer_columns = json!([
-        {
-            "name": "READY",
-            "type": "string",
-            "jsonPath": ".status.conditions[?(@.type=='Ready')].status"
-        },
-        {
-            "name": "SYNCED",
-            "type": "string",
-            "jsonPath": ".status.conditions[?(@.type=='Synced')].status"
-        },
-        {
-            "name": "AGE",
-            "type": "date",
-            "jsonPath": ".metadata.creationTimestamp"
-        }
-    ]);
+    let scope = derive_scope(platform_config);
 
     let crd = json!({
         "apiVersion": "apiextensions.k8s.io/v1",
@@ -294,7 +304,7 @@ pub fn generate_resource_crd_with_config(
                 "name": api_version,
                 "served": true,
                 "storage": true,
-                "additionalPrinterColumns": printer_columns,
+                "additionalPrinterColumns": printer_columns(),
                 "subresources": {
                     "status": {}
                 },
@@ -313,7 +323,7 @@ pub fn generate_resource_crd_with_config(
                                 "type": "object",
                                 "properties": {
                                     "atProvider": at_provider_schema,
-                                    "conditions": conditions_schema
+                                    "conditions": conditions_schema()
                                 }
                             }
                         }
@@ -323,7 +333,6 @@ pub fn generate_resource_crd_with_config(
         }
     });
 
-    // Serialize with sorted keys for deterministic output.
     let sorted = sort_json_keys(&crd);
     serde_yaml_ng::to_string(&sorted)
 }
