@@ -69,6 +69,31 @@ pub fn iac_type_to_schema(iac_type: &IacType) -> Value {
     }
 }
 
+/// Build an annotated description for `forProvider` fields.
+///
+/// Appends `(immutable)` and/or `[sensitive]` markers as appropriate.
+fn annotated_description(base: &str, immutable: bool, sensitive: bool) -> Option<String> {
+    let mut desc = base.to_string();
+
+    if immutable {
+        if desc.is_empty() {
+            desc = "(immutable)".to_string();
+        } else {
+            desc = format!("{desc} (immutable)");
+        }
+    }
+
+    if sensitive {
+        if desc.is_empty() {
+            desc = "[sensitive]".to_string();
+        } else {
+            desc = format!("{desc} [sensitive]");
+        }
+    }
+
+    if desc.is_empty() { None } else { Some(desc) }
+}
+
 /// Build the `forProvider` schema properties from resource attributes.
 ///
 /// Only includes non-computed (mutable) fields.
@@ -82,29 +107,10 @@ fn build_for_provider(attributes: &[IacAttribute]) -> (Map<String, Value>, Vec<V
         }
 
         let mut schema = iac_type_to_schema(&attr.iac_type);
-        let mut desc = attr.description.clone();
-        if attr.immutable {
-            if desc.is_empty() {
-                desc = "(immutable)".to_string();
-            } else {
-                desc = format!("{desc} (immutable)");
-            }
-        }
-        if !desc.is_empty() {
+
+        if let Some(desc) = annotated_description(&attr.description, attr.immutable, attr.sensitive)
+        {
             schema["description"] = Value::String(desc);
-        }
-        if attr.sensitive {
-            let existing_desc = schema
-                .get("description")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let sensitive_desc = if existing_desc.is_empty() {
-                "[sensitive]".to_string()
-            } else {
-                format!("{existing_desc} [sensitive]")
-            };
-            schema["description"] = Value::String(sensitive_desc);
         }
 
         properties.insert(attr.canonical_name.clone(), schema);
@@ -2439,5 +2445,66 @@ mod tests {
         assert_eq!(z_keys, vec!["a", "b"]);
         let b_keys: Vec<&String> = sorted["z"]["b"].as_object().unwrap().keys().collect();
         assert_eq!(b_keys, vec!["a", "d"]);
+    }
+
+    #[test]
+    fn annotated_description_plain() {
+        assert_eq!(
+            annotated_description("Some field", false, false),
+            Some("Some field".into())
+        );
+    }
+
+    #[test]
+    fn annotated_description_empty_no_flags() {
+        assert_eq!(annotated_description("", false, false), None);
+    }
+
+    #[test]
+    fn annotated_description_immutable_only() {
+        assert_eq!(
+            annotated_description("A field", true, false),
+            Some("A field (immutable)".into())
+        );
+    }
+
+    #[test]
+    fn annotated_description_sensitive_only() {
+        assert_eq!(
+            annotated_description("A field", false, true),
+            Some("A field [sensitive]".into())
+        );
+    }
+
+    #[test]
+    fn annotated_description_both_flags() {
+        assert_eq!(
+            annotated_description("A field", true, true),
+            Some("A field (immutable) [sensitive]".into())
+        );
+    }
+
+    #[test]
+    fn annotated_description_empty_immutable() {
+        assert_eq!(
+            annotated_description("", true, false),
+            Some("(immutable)".into())
+        );
+    }
+
+    #[test]
+    fn annotated_description_empty_sensitive() {
+        assert_eq!(
+            annotated_description("", false, true),
+            Some("[sensitive]".into())
+        );
+    }
+
+    #[test]
+    fn annotated_description_empty_both() {
+        assert_eq!(
+            annotated_description("", true, true),
+            Some("(immutable) [sensitive]".into())
+        );
     }
 }
