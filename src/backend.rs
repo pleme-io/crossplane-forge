@@ -60,8 +60,7 @@ impl Backend for CrossplaneBackend {
             &group,
             &api_version,
             &provider.platform_config,
-        )
-        .map_err(|e| IacForgeError::BackendError(e.to_string()))?;
+        )?;
 
         let path = self.naming().file_name(&resource.name, &ArtifactKind::Resource);
 
@@ -90,8 +89,7 @@ impl Backend for CrossplaneBackend {
         let group = crd::derive_group(&provider.name, &provider.platform_config);
         let api_version = crd::derive_api_version(&provider.platform_config);
 
-        let yaml = crd::generate_provider_config_crd(&provider.name, &group, &api_version)
-            .map_err(|e| IacForgeError::BackendError(e.to_string()))?;
+        let yaml = crd::generate_provider_config_crd(&provider.name, &group, &api_version)?;
 
         let path = self
             .naming()
