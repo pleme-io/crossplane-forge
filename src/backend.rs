@@ -1,3 +1,5 @@
+use std::fmt;
+
 use iac_forge::backend::{ArtifactKind, Backend, GeneratedArtifact, NamingConvention};
 use iac_forge::error::IacForgeError;
 use iac_forge::ir::{IacDataSource, IacProvider, IacResource};
@@ -6,9 +8,17 @@ use iac_forge::naming::{strip_provider_prefix, to_kebab_case, to_pascal_case, to
 use crate::crd;
 
 /// Crossplane backend — generates Kubernetes CRD YAML from `IaC` forge IR.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CrossplaneBackend;
 
+impl fmt::Display for CrossplaneBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("crossplane")
+    }
+}
+
 /// Naming convention for Crossplane CRD resources.
+#[derive(Debug, Clone, Copy)]
 struct CrossplaneNaming;
 
 impl NamingConvention for CrossplaneNaming {
