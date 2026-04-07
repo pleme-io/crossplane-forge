@@ -10,5 +10,8 @@
 pub mod backend;
 /// CRD YAML generation helpers.
 pub mod crd;
+/// Typed errors for CRD generation.
+pub mod error;
 
 pub use backend::CrossplaneBackend;
+pub use error::CrdError;
