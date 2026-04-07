@@ -289,4 +289,151 @@ mod tests {
             .expect("generate");
         assert!(artifacts[0].content.contains("vault.akeyless.io"));
     }
+
+    #[test]
+    fn file_name_fallback_for_non_resource_non_provider_kinds() {
+        let naming = CrossplaneNaming;
+        assert_eq!(
+            naming.file_name("my_data_source", &ArtifactKind::DataSource),
+            "my-data-source.yaml"
+        );
+        assert_eq!(
+            naming.file_name("my_test", &ArtifactKind::Test),
+            "my-test.yaml"
+        );
+        assert_eq!(
+            naming.file_name("my_schema", &ArtifactKind::Schema),
+            "my-schema.yaml"
+        );
+        assert_eq!(
+            naming.file_name("my_module", &ArtifactKind::Module),
+            "my-module.yaml"
+        );
+        assert_eq!(
+            naming.file_name("my_metadata", &ArtifactKind::Metadata),
+            "my-metadata.yaml"
+        );
+    }
+
+    #[test]
+    fn generate_resource_with_custom_api_version() {
+        let mut provider = make_test_provider();
+        let mut crossplane_table = toml::map::Map::new();
+        crossplane_table.insert(
+            "api_version".to_string(),
+            toml::Value::String("v1beta1".to_string()),
+        );
+        provider.platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Table(crossplane_table),
+        );
+
+        let backend = CrossplaneBackend;
+        let resource = make_test_resource();
+
+        let artifacts = backend
+            .generate_resource(&resource, &provider)
+            .expect("generate");
+        assert!(
+            artifacts[0].content.contains("v1beta1"),
+            "generated CRD should use custom api_version from platform config"
+        );
+    }
+
+    #[test]
+    fn generate_provider_with_custom_group_and_api_version() {
+        let mut provider = make_test_provider();
+        let mut crossplane_table = toml::map::Map::new();
+        crossplane_table.insert(
+            "group".to_string(),
+            toml::Value::String("vault.akeyless.io".to_string()),
+        );
+        crossplane_table.insert(
+            "api_version".to_string(),
+            toml::Value::String("v1beta1".to_string()),
+        );
+        provider.platform_config.insert(
+            "crossplane".to_string(),
+            toml::Value::Table(crossplane_table),
+        );
+
+        let backend = CrossplaneBackend;
+        let artifacts = backend
+            .generate_provider(&provider, &[], &[])
+            .expect("generate");
+
+        assert_eq!(artifacts.len(), 1);
+        assert!(artifacts[0].content.contains("vault.akeyless.io"));
+        assert!(artifacts[0].content.contains("v1beta1"));
+        assert!(artifacts[0].path.contains("providerconfig"));
+    }
+
+    #[test]
+    fn resource_type_name_without_matching_prefix() {
+        let naming = CrossplaneNaming;
+        let result = naming.resource_type_name("some_resource", "different_provider");
+        assert!(
+            !result.is_empty(),
+            "should still produce a name even when prefix doesn't match"
+        );
+    }
+
+    #[test]
+    fn resource_type_name_single_word_after_prefix() {
+        let naming = CrossplaneNaming;
+        assert_eq!(
+            naming.resource_type_name("akeyless_secret", "akeyless"),
+            "Secret"
+        );
+    }
+
+    #[test]
+    fn field_name_already_snake_case() {
+        let naming = CrossplaneNaming;
+        assert_eq!(naming.field_name("already_snake"), "already_snake");
+    }
+
+    #[test]
+    fn field_name_hyphens_become_underscores() {
+        let naming = CrossplaneNaming;
+        assert_eq!(
+            naming.field_name("some-field-name"),
+            "some_field_name"
+        );
+    }
+
+    #[test]
+    fn naming_returns_crossplane_naming() {
+        let backend = CrossplaneBackend;
+        let naming = backend.naming();
+        assert_eq!(
+            naming.resource_type_name("akeyless_secret", "akeyless"),
+            "Secret"
+        );
+    }
+
+    #[test]
+    fn generate_resource_artifact_path_format() {
+        let backend = CrossplaneBackend;
+        let provider = make_test_provider();
+        let resource = make_test_resource();
+
+        let artifacts = backend
+            .generate_resource(&resource, &provider)
+            .expect("generate");
+
+        assert_eq!(artifacts[0].path, "akeyless-static-secret-crd.yaml");
+    }
+
+    #[test]
+    fn generate_provider_artifact_path_format() {
+        let backend = CrossplaneBackend;
+        let provider = make_test_provider();
+
+        let artifacts = backend
+            .generate_provider(&provider, &[], &[])
+            .expect("generate");
+
+        assert_eq!(artifacts[0].path, "akeyless-providerconfig-crd.yaml");
+    }
 }
