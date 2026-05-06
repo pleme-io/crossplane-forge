@@ -8,10 +8,13 @@
 
 /// Backend trait implementation and naming convention.
 pub mod backend;
+/// Crossplane controller Go-code emitter (per-resource ExternalClient impl).
+pub mod controller_gen;
 /// CRD YAML generation helpers.
 pub mod crd;
 /// Typed errors for CRD generation.
 pub mod error;
 
 pub use backend::CrossplaneBackend;
+pub use controller_gen::{ControllerConfig, render_controller};
 pub use error::CrdError;
