@@ -64,11 +64,7 @@ impl Backend for CrossplaneBackend {
 
         let path = self.naming().file_name(&resource.name, &ArtifactKind::Resource);
 
-        Ok(vec![GeneratedArtifact {
-            path,
-            content: yaml,
-            kind: ArtifactKind::Resource,
-        }])
+        Ok(vec![GeneratedArtifact::new(path, yaml, ArtifactKind::Resource)])
     }
 
     fn generate_data_source(
@@ -95,11 +91,7 @@ impl Backend for CrossplaneBackend {
             .naming()
             .file_name(&provider.name, &ArtifactKind::Provider);
 
-        Ok(vec![GeneratedArtifact {
-            path,
-            content: yaml,
-            kind: ArtifactKind::Provider,
-        }])
+        Ok(vec![GeneratedArtifact::new(path, yaml, ArtifactKind::Provider)])
     }
 
     fn generate_test(
@@ -164,7 +156,7 @@ mod tests {
                     computed: false,
                     sensitive: false,
                     immutable: true,
-                    default_value: None,
+                    optional: false, json_encoded: false, default_value: None,
                     enum_values: None,
                     read_path: None,
                     update_only: false,
@@ -178,7 +170,7 @@ mod tests {
                     computed: false,
                     sensitive: true,
                     immutable: false,
-                    default_value: None,
+                    optional: false, json_encoded: false, default_value: None,
                     enum_values: None,
                     read_path: None,
                     update_only: false,
