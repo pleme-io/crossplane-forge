@@ -92,8 +92,11 @@ pub fn render_controller(
     let mut code = String::new();
     code.push_str(&render_header(resource));
     code.push_str(&render_package_decl(resource, provider));
-    code.push_str(&render_imports(provider, config));
+    let imports = render_imports(provider, config);
+    let pkg = package_name(resource, provider);
+    code.push_str(&imports.replace("{this_pkg}", &pkg));
     code.push_str(&render_external_struct());
+    code.push_str(&render_setup_and_connector(resource, provider, config));
     code.push_str(&render_observe(resource, provider, config));
     code.push_str(&render_create(resource, provider, config));
     code.push_str(&render_update(resource, provider, config));
@@ -126,22 +129,32 @@ fn render_package_decl(resource: &IacResource, provider: &IacProvider) -> String
 
 fn render_imports(provider: &IacProvider, config: &ControllerConfig) -> String {
     let provider_pkg = provider.name.replace('-', "");
+    let resource_pkg_alias = "v1alpha1"; // for per-resource types
+    let provider_pkg_alias = "providerv1alpha1"; // for ProviderConfig types
     format!(
         "import (\n\
         \t\"context\"\n\
         \t\"errors\"\n\
+        \t\"time\"\n\
         \n\
         \txpv1 \"github.com/crossplane/crossplane-runtime/apis/common/v1\"\n\
         \t\"github.com/crossplane/crossplane-runtime/pkg/meta\"\n\
         \t\"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed\"\n\
         \t\"github.com/crossplane/crossplane-runtime/pkg/resource\"\n\
+        \tctrl \"sigs.k8s.io/controller-runtime\"\n\
+        \t\"sigs.k8s.io/controller-runtime/pkg/client\"\n\
         \n\
         \t{provider_pkg} \"{sdk_module}\"\n\
-        \tv1alpha1 \"{provider_module}/apis/{provider_pkg}/{api_version}\"\n\
-        )\n\n",
+        \t{resource_pkg_alias} \"{provider_module}/apis/{this_pkg}/v1alpha1\"\n\
+        \t{provider_pkg_alias} \"{provider_module}/apis/{provider_pkg}/v1alpha1\"\n\
+        )\n\n\
+        var _ = xpv1.Available\n\
+        var _ ctrl.Manager\n\
+        var _ time.Duration\n\
+        var _ client.Client\n\n",
         sdk_module = config.sdk_module,
         provider_module = config.provider_module,
-        api_version = config.api_version,
+        this_pkg = "{this_pkg}", // placeholder filled by render_controller; real values set below
     )
 }
 
@@ -153,6 +166,66 @@ fn render_external_struct() -> String {
      \ttoken  string\n\
      }\n\n"
         .to_string()
+}
+
+fn render_setup_and_connector(
+    resource: &IacResource,
+    provider: &IacProvider,
+    _config: &ControllerConfig,
+) -> String {
+    let kind = cr_kind(resource, provider);
+    let pkg = package_name(resource, provider);
+    let _ = pkg;
+    format!(
+        "// Setup wires this resource's controller into the manager.\n\
+         func Setup(mgr ctrl.Manager, pollInterval time.Duration) error {{\n\
+         \tname := \"{kind}\"\n\
+         \tgvk := v1alpha1.GroupVersion.WithKind(\"{kind}\")\n\
+         \tr := managed.NewReconciler(mgr,\n\
+         \t\tresource.ManagedKind(gvk),\n\
+         \t\tmanaged.WithExternalConnecter(&connector{{kube: mgr.GetClient()}}),\n\
+         \t\tmanaged.WithPollInterval(pollInterval),\n\
+         \t\tmanaged.WithLogger(ctrl.Log.WithName(name)),\n\
+         \t)\n\
+         \treturn ctrl.NewControllerManagedBy(mgr).\n\
+         \t\tNamed(name).\n\
+         \t\tFor(&v1alpha1.{kind}{{}}).\n\
+         \t\tComplete(r)\n\
+         }}\n\n\
+         // connector resolves a ProviderConfig and constructs an external\n\
+         // client for each managed-resource reconcile loop.\n\
+         type connector struct {{\n\
+         \tkube client.Client\n\
+         }}\n\n\
+         func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {{\n\
+         \tcr, ok := mg.(*v1alpha1.{kind})\n\
+         \tif !ok {{\n\
+         \t\treturn nil, errors.New(\"expected *v1alpha1.{kind}\")\n\
+         \t}}\n\
+         \tpcRef := cr.GetProviderConfigReference()\n\
+         \tif pcRef == nil {{\n\
+         \t\treturn nil, errors.New(\"no provider config reference\")\n\
+         \t}}\n\n\
+         \tpc := &providerv1alpha1.ProviderConfig{{}}\n\
+         \tif err := c.kube.Get(ctx, client.ObjectKey{{Name: pcRef.Name}}, pc); err != nil {{\n\
+         \t\treturn nil, err\n\
+         \t}}\n\
+         \tcreds, err := resource.CommonCredentialExtractor(\n\
+         \t\tctx, pc.Spec.Credentials.Source, c.kube, pc.Spec.Credentials.CommonCredentialSelectors,\n\
+         \t)\n\
+         \tif err != nil {{\n\
+         \t\treturn nil, err\n\
+         \t}}\n\n\
+         \tcfg := akeyless.NewConfiguration()\n\
+         \tif pc.Spec.APIGateway != \"\" {{\n\
+         \t\tcfg.Servers = []akeyless.ServerConfiguration{{{{URL: pc.Spec.APIGateway}}}}\n\
+         \t}}\n\
+         \treturn &external{{\n\
+         \t\tclient: akeyless.NewAPIClient(cfg),\n\
+         \t\ttoken:  string(creds),\n\
+         \t}}, nil\n\
+         }}\n\n"
+    )
 }
 
 fn render_observe(
@@ -456,6 +529,25 @@ mod tests {
         );
         assert!(code.contains("akeyless.DeleteAuthMethod{"));
         assert!(code.contains("e.client.V2API.DeleteAuthMethod(ctx)"));
+    }
+
+    #[test]
+    fn setup_and_connector_present_in_controller() {
+        let code = render_controller(
+            &auth_method_api_key_resource(),
+            &akeyless_provider(),
+            &ControllerConfig::akeyless_default(),
+        );
+        // Setup function wires the resource into the manager
+        assert!(code.contains("func Setup(mgr ctrl.Manager, pollInterval time.Duration) error"));
+        assert!(code.contains("v1alpha1.GroupVersion.WithKind(\"AuthMethodApiKey\")"));
+        assert!(code.contains("For(&v1alpha1.AuthMethodApiKey{})"));
+        // Connector struct + Connect method that resolves ProviderConfig
+        assert!(code.contains("type connector struct"));
+        assert!(code.contains("func (c *connector) Connect("));
+        assert!(code.contains("providerv1alpha1.ProviderConfig"));
+        assert!(code.contains("resource.CommonCredentialExtractor"));
+        assert!(code.contains("akeyless.NewAPIClient"));
     }
 
     #[test]
