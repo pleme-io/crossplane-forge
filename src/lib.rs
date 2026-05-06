@@ -14,7 +14,10 @@ pub mod controller_gen;
 pub mod crd;
 /// Typed errors for CRD generation.
 pub mod error;
+/// Crossplane managed-resource Go-types emitter.
+pub mod types_gen;
 
 pub use backend::CrossplaneBackend;
 pub use controller_gen::{ControllerConfig, render_controller};
 pub use error::CrdError;
+pub use types_gen::{render_groupversion_info, render_resource_types};
