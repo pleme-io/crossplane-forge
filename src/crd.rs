@@ -95,6 +95,14 @@ pub fn iac_type_to_schema(iac_type: &IacType) -> Value {
         IacType::Any => json!({
             "x-kubernetes-preserve-unknown-fields": true
         }),
+        // `IacType` is `#[non_exhaustive]`; any future variant added in
+        // iac-forge falls through to a permissive schema fragment that
+        // keeps the CRD generator from breaking the build before the
+        // explicit case lands. Replace with an explicit arm when adding
+        // support for a new IR type.
+        _ => json!({
+            "x-kubernetes-preserve-unknown-fields": true
+        }),
     }
 }
 
@@ -495,8 +503,7 @@ mod tests {
                     required: true,
                     computed: false,
                     sensitive: false,
-                    immutable: true,
-                    default_value: None,
+                    immutable: true,                    optional: false, json_encoded: false, default_value: None,
                     enum_values: None,
                     read_path: None,
                     update_only: false,
@@ -509,8 +516,7 @@ mod tests {
                     required: true,
                     computed: false,
                     sensitive: true,
-                    immutable: false,
-                    default_value: None,
+                    immutable: false,                    optional: false, json_encoded: false, default_value: None,
                     enum_values: None,
                     read_path: None,
                     update_only: false,
@@ -523,8 +529,7 @@ mod tests {
                     required: false,
                     computed: false,
                     sensitive: false,
-                    immutable: false,
-                    default_value: None,
+                    immutable: false,                    optional: false, json_encoded: false, default_value: None,
                     enum_values: None,
                     read_path: None,
                     update_only: false,
@@ -537,8 +542,7 @@ mod tests {
                     required: false,
                     computed: true,
                     sensitive: false,
-                    immutable: false,
-                    default_value: None,
+                    immutable: false,                    optional: false, json_encoded: false, default_value: None,
                     enum_values: None,
                     read_path: None,
                     update_only: false,
@@ -918,7 +922,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "int_field".to_string(),
@@ -926,7 +930,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::Integer,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "float_field".to_string(),
@@ -934,7 +938,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::Float,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "bool_field".to_string(),
@@ -942,7 +946,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::Boolean,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "list_field".to_string(),
@@ -950,7 +954,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::List(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "set_field".to_string(),
@@ -958,7 +962,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::Set(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "map_field".to_string(),
@@ -966,7 +970,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::Map(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "object_field".to_string(),
@@ -980,11 +984,11 @@ mod tests {
                             description: "sub field".to_string(),
                             iac_type: IacType::String,
                             required: true, computed: false, sensitive: false, immutable: false,
-                            default_value: None, enum_values: None, read_path: None, update_only: false,
+                            optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                         }],
                     },
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "enum_field".to_string(),
@@ -995,7 +999,7 @@ mod tests {
                         underlying: Box::new(IacType::String),
                     },
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "any_field".to_string(),
@@ -1003,7 +1007,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::Any,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
             ],
             identity: IdentityInfo {
@@ -1105,7 +1109,7 @@ mod tests {
                     description: "Config key".to_string(),
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "value".to_string(),
@@ -1113,7 +1117,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::Integer,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
             ],
         });
@@ -1167,7 +1171,7 @@ mod tests {
                 description: "Method".to_string(),
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "method".to_string(),
@@ -1241,7 +1245,7 @@ mod tests {
                 description: String::new(),
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: true, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "secret".to_string(),
@@ -1284,7 +1288,7 @@ mod tests {
                 description: "API key".to_string(),
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: true, immutable: true,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "key".to_string(),
@@ -1328,7 +1332,7 @@ mod tests {
                 description: String::new(),
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: true, immutable: true,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "token".to_string(),
@@ -1481,7 +1485,7 @@ mod tests {
                 description: "Item ID".to_string(),
                 iac_type: IacType::Integer,
                 required: true, computed: false, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
         })));
         assert_eq!(schema["type"], "array");
@@ -1502,7 +1506,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "opt_b".to_string(),
@@ -1510,7 +1514,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::Boolean,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
             ],
         });
@@ -1631,7 +1635,7 @@ mod tests {
                     description: "The name".to_string(),
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "id".to_string(),
@@ -1639,7 +1643,7 @@ mod tests {
                     description: "The id".to_string(),
                     iac_type: IacType::String,
                     required: false, computed: true, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "secret_val".to_string(),
@@ -1647,7 +1651,7 @@ mod tests {
                     description: "A secret".to_string(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: true, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
             ],
             identity: IdentityInfo {
@@ -1699,7 +1703,7 @@ mod tests {
                 description: "Secret value".to_string(),
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: true, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "secret".to_string(),
@@ -1742,7 +1746,7 @@ mod tests {
                 description: String::new(),
                 iac_type: IacType::Integer,
                 required: false, computed: true, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "count".to_string(),
@@ -1931,7 +1935,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: true, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "user_input".to_string(),
@@ -1939,7 +1943,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
             ],
             identity: IdentityInfo {
@@ -2004,7 +2008,7 @@ mod tests {
                 description: String::new(),
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
         })));
         assert_eq!(schema["type"], "object");
@@ -2031,7 +2035,7 @@ mod tests {
                 description: String::new(),
                 iac_type: IacType::Boolean,
                 required: false, computed: false, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
         });
         assert!(
@@ -2064,7 +2068,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "a_field".to_string(),
@@ -2072,7 +2076,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
                 IacAttribute {
                     api_name: "m_field".to_string(),
@@ -2080,7 +2084,7 @@ mod tests {
                     description: String::new(),
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 },
             ],
             identity: IdentityInfo {
@@ -2126,7 +2130,7 @@ mod tests {
                 description: "Resource tags".to_string(),
                 iac_type: IacType::List(Box::new(IacType::String)),
                 required: false, computed: false, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "tags".to_string(),
@@ -2170,7 +2174,7 @@ mod tests {
                 description: String::new(),
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: true,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "id".to_string(),
@@ -2292,7 +2296,7 @@ mod tests {
                 description: "User input".into(),
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             },
             IacAttribute {
                 api_name: "computed_id".into(),
@@ -2300,7 +2304,7 @@ mod tests {
                 description: "Auto-generated".into(),
                 iac_type: IacType::String,
                 required: false, computed: true, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             },
         ];
         let (props, required) = build_for_provider(&attrs);
@@ -2319,7 +2323,7 @@ mod tests {
                 description: "User input".into(),
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             },
             IacAttribute {
                 api_name: "computed_id".into(),
@@ -2327,7 +2331,7 @@ mod tests {
                 description: "Auto-generated".into(),
                 iac_type: IacType::String,
                 required: false, computed: true, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             },
         ];
         let props = build_at_provider(&attrs);
@@ -2364,7 +2368,7 @@ mod tests {
                         underlying: Box::new(IacType::String),
                     },
                     required: true, computed: false, sensitive: false, immutable: false,
-                    default_value: None, enum_values: None, read_path: None, update_only: false,
+                    optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
                 }],
             }),
         )))));
@@ -2430,7 +2434,7 @@ mod tests {
                 description: "Bucket name".into(),
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: false,
-                default_value: None, enum_values: None, read_path: None, update_only: false,
+                optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
             }],
             identity: IdentityInfo {
                 id_field: "bucket".into(),
