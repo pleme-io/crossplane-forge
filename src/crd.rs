@@ -317,6 +317,61 @@ pub fn generate_resource_crd_with_config(
 
     let scope = derive_scope(platform_config);
 
+    // xpv1.ResourceSpec embedded fields. Every Crossplane managed
+    // resource's spec embeds these alongside forProvider — they're
+    // what `cr.GetProviderConfigReference()` etc. read in the
+    // controller. Without them in the CRD schema, kubectl strict
+    // decoding rejects CRs that set `spec.providerConfigRef` etc.
+    let crossplane_spec_fields = json!({
+        "providerConfigRef": {
+            "type": "object",
+            "properties": {
+                "name":   { "type": "string" },
+                "policy": { "type": "object", "properties": {
+                    "resolution": { "type": "string", "enum": ["Required", "Optional"] },
+                    "resolve":    { "type": "string", "enum": ["Always", "IfNotPresent"] }
+                }}
+            },
+            "required": ["name"]
+        },
+        "writeConnectionSecretToRef": {
+            "type": "object",
+            "properties": {
+                "name":      { "type": "string" },
+                "namespace": { "type": "string" }
+            },
+            "required": ["name", "namespace"]
+        },
+        "publishConnectionDetailsTo": {
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "configRef": { "type": "object", "properties": {
+                    "name": { "type": "string" }
+                }},
+                "metadata": { "type": "object" }
+            },
+            "required": ["name"]
+        },
+        "deletionPolicy": {
+            "type": "string",
+            "enum": ["Orphan", "Delete"]
+        },
+        "managementPolicies": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["Observe", "Create", "Update", "Delete", "LateInitialize", "*"] }
+        }
+    });
+
+    // Merge crossplane-spec fields into spec.properties next to forProvider.
+    let mut spec_properties = serde_json::Map::new();
+    spec_properties.insert("forProvider".to_string(), for_provider_schema);
+    if let Value::Object(map) = crossplane_spec_fields {
+        for (k, v) in map {
+            spec_properties.insert(k, v);
+        }
+    }
+
     let crd = json!({
         "apiVersion": "apiextensions.k8s.io/v1",
         "kind": "CustomResourceDefinition",
@@ -346,9 +401,7 @@ pub fn generate_resource_crd_with_config(
                         "properties": {
                             "spec": {
                                 "type": "object",
-                                "properties": {
-                                    "forProvider": for_provider_schema
-                                },
+                                "properties": Value::Object(spec_properties),
                                 "required": ["forProvider"]
                             },
                             "status": {
@@ -408,12 +461,16 @@ pub fn generate_provider_config_crd(
                             "spec": {
                                 "type": "object",
                                 "properties": {
+                                    "apiGateway": {
+                                        "type": "string",
+                                        "description": "URL of the upstream API endpoint (e.g. https://api.staging.akeyless.dev). Optional; defaults to the SDK's compiled-in production endpoint."
+                                    },
                                     "credentials": {
                                         "type": "object",
                                         "properties": {
                                             "source": {
                                                 "type": "string",
-                                                "enum": ["None", "Secret"]
+                                                "enum": ["None", "Secret", "Environment", "Filesystem"]
                                             },
                                             "secretRef": {
                                                 "type": "object",
@@ -423,6 +480,20 @@ pub fn generate_provider_config_crd(
                                                     "key": { "type": "string" }
                                                 },
                                                 "required": ["name", "namespace", "key"]
+                                            },
+                                            "env": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": { "type": "string" }
+                                                },
+                                                "required": ["name"]
+                                            },
+                                            "fs": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "path": { "type": "string" }
+                                                },
+                                                "required": ["path"]
                                             }
                                         },
                                         "required": ["source"]
