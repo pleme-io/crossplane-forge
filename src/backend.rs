@@ -7,7 +7,7 @@ use iac_forge::ir::{IacDataSource, IacProvider, IacResource};
 use iac_forge::naming::{strip_provider_prefix, to_kebab_case, to_pascal_case, to_snake_case};
 
 use crate::controller_gen::{self, ControllerConfig, package_name};
-use crate::{crd, provider_gen, types_gen};
+use crate::{crd, deepcopy_gen, provider_gen, types_gen};
 
 // ── Backend ──────────────────────────────────────────────────────────────
 
@@ -114,10 +114,15 @@ impl Backend for CrossplaneBackend {
         let controller_go = controller_gen::render_controller(resource, provider, &cfg);
         let controller_path = format!("internal/controller/{pkg}/controller.go");
 
+        // zz_generated_deepcopy.go for the resource's package
+        let deepcopy_go = deepcopy_gen::render_resource_deepcopy(resource, provider);
+        let deepcopy_path = format!("apis/{pkg}/v1alpha1/zz_generated_deepcopy.go");
+
         Ok(vec![
             GeneratedArtifact::new(crd_path, crd_yaml, ArtifactKind::Resource),
             GeneratedArtifact::new(types_path, types_go, ArtifactKind::Resource),
             GeneratedArtifact::new(gvi_path, gvi_go, ArtifactKind::Module),
+            GeneratedArtifact::new(deepcopy_path, deepcopy_go, ArtifactKind::Module),
             GeneratedArtifact::new(controller_path, controller_go, ArtifactKind::Controller),
         ])
     }
@@ -157,6 +162,10 @@ impl Backend for CrossplaneBackend {
         let pc_gvi_go = provider_gen::render_provider_groupversion_info(provider, &cfg);
         let pc_gvi_path = format!("apis/{provider_pkg}/v1alpha1/groupversion_info.go");
 
+        let pc_deepcopy_go = deepcopy_gen::render_provider_deepcopy();
+        let pc_deepcopy_path =
+            format!("apis/{provider_pkg}/v1alpha1/zz_generated_deepcopy.go");
+
         // apis/apis.go — aggregates every per-resource SchemeBuilder
         // behind a single AddToScheme that cmd/provider/main.go calls.
         let apis_aggregator_go = provider_gen::render_apis_aggregator(resources, provider, &cfg);
@@ -186,6 +195,7 @@ impl Backend for CrossplaneBackend {
                 ArtifactKind::ProviderConfig,
             ),
             GeneratedArtifact::new(pc_gvi_path, pc_gvi_go, ArtifactKind::Module),
+            GeneratedArtifact::new(pc_deepcopy_path, pc_deepcopy_go, ArtifactKind::Module),
             GeneratedArtifact::new(
                 apis_aggregator_path,
                 apis_aggregator_go,
@@ -376,8 +386,9 @@ mod tests {
         let arts = backend
             .generate_resource(&resource, &provider)
             .expect("generate_resource");
-        // 4 artifacts per resource: legacy CRD + types.go + groupversion + controller
-        assert_eq!(arts.len(), 4, "expected 4 artifacts per resource");
+        // 5 artifacts per resource: legacy CRD + types.go + groupversion +
+        // deepcopy + controller
+        assert_eq!(arts.len(), 5, "expected 5 artifacts per resource");
         let paths: Vec<&str> = arts.iter().map(|a| a.path.as_str()).collect();
         assert!(paths.iter().any(|p| p.ends_with("-crd.yaml")));
         assert!(paths
@@ -416,7 +427,9 @@ mod tests {
         for a in &arts {
             let expected = if a.path.ends_with("-crd.yaml") || a.path.ends_with("_types.go") {
                 ArtifactKind::Resource
-            } else if a.path.ends_with("/groupversion_info.go") {
+            } else if a.path.ends_with("/groupversion_info.go")
+                || a.path.ends_with("/zz_generated_deepcopy.go")
+            {
                 ArtifactKind::Module
             } else if a.path.ends_with("/controller.go") {
                 ArtifactKind::Controller
@@ -442,6 +455,7 @@ mod tests {
             "package/crds/providerconfig-crd.yaml",
             "apis/akeyless/v1alpha1/providerconfig_types.go",
             "apis/akeyless/v1alpha1/groupversion_info.go",
+            "apis/akeyless/v1alpha1/zz_generated_deepcopy.go",
             "apis/apis.go",
             "cmd/provider/main.go",
             "internal/controller/setup.go",
@@ -499,8 +513,8 @@ mod tests {
         assert_eq!(by_kind.get("provider").copied().unwrap_or(0), 2);
         // ProviderConfig types = 1
         assert_eq!(by_kind.get("provider_config").copied().unwrap_or(0), 1);
-        // groupversion_info + setup.go + apis.go = 3 Module artifacts
-        assert_eq!(by_kind.get("module").copied().unwrap_or(0), 3);
+        // groupversion_info + zz_deepcopy + setup.go + apis.go = 4 Module artifacts
+        assert_eq!(by_kind.get("module").copied().unwrap_or(0), 4);
         // go.mod = 1 Metadata
         assert_eq!(by_kind.get("metadata").copied().unwrap_or(0), 1);
         // helm/* = 4 HelmChart

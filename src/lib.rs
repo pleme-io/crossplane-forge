@@ -12,6 +12,8 @@ pub mod backend;
 pub mod controller_gen;
 /// CRD YAML generation helpers.
 pub mod crd;
+/// Per-package deepcopy emitter (`zz_generated_deepcopy.go`).
+pub mod deepcopy_gen;
 /// Typed errors for CRD generation.
 pub mod error;
 /// Provider-runtime scaffold emitter (ProviderConfig types, main.go,
