@@ -88,6 +88,44 @@ pub struct MethodOverride {
     /// When `Some`, replaces `ResourceShape::identifier_pointer` for
     /// this CRUD method.
     pub identifier_pointer: Option<bool>,
+    /// When `Some`, the entire body construction goes through the
+    /// template, ignoring `identifier_field` / `identifier_pointer`.
+    /// Used for SDK body shapes that don't fit the
+    /// single-string-identifier pattern.
+    pub body_template: Option<BodyTemplate>,
+}
+
+/// Body-construction template for a CRUD method whose SDK body
+/// shape doesn't fit the single-string-identifier pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BodyTemplate {
+    /// `body := akeyless.X{Token: &e.token}` — no identifier field.
+    /// Used by singleton-bodies (e.g. KmipDescribeServer / KmipDeleteServer).
+    NoIdentifier,
+    /// `id, _ := strconv.ParseInt(meta.GetExternalName(cr), 10, 64)` +
+    /// `body := akeyless.X{<field>: id, Token: &e.token}`. Adds `strconv`
+    /// to the controller's imports.
+    Int64FromExternalName { field: String },
+    /// `body := akeyless.X{<body_field>: cr.Spec.ForProvider.<spec_field>,
+    ///                    ..., Token: &e.token}` — composite-key bodies
+    /// pulling each field from the resource's spec.
+    SpecFields(Vec<SpecFieldMapping>),
+}
+
+/// One (body_field, spec_field, pointer) triple for [`BodyTemplate::SpecFields`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SpecFieldMapping {
+    /// SDK body struct field name (e.g. `"RoleName"`).
+    pub body_field: String,
+    /// Go-PascalCase'd `cr.Spec.ForProvider.<X>` field name
+    /// (e.g. `"RoleName"`, `"Path"`, `"AmName"`). The emitter does not
+    /// transform — pass the exact Go identifier the IR produces.
+    pub spec_field: String,
+    /// Whether the SDK body field is `*T` (pointer) — emitter wraps
+    /// the spec value in a `&`.
+    pub pointer: bool,
 }
 
 /// The resolved (post-`per_method`-lookup) shape for one CRUD method.
@@ -95,6 +133,7 @@ pub struct MethodOverride {
 pub struct EffectiveShape {
     pub identifier_field: String,
     pub identifier_pointer: bool,
+    pub body_template: Option<BodyTemplate>,
 }
 
 impl Default for ResourceShape {
@@ -157,7 +196,21 @@ impl ResourceShape {
             identifier_pointer: ov
                 .and_then(|o| o.identifier_pointer)
                 .unwrap_or(self.identifier_pointer),
+            body_template: ov.and_then(|o| o.body_template.clone()),
         }
+    }
+
+    /// True when at least one method uses
+    /// [`BodyTemplate::Int64FromExternalName`]. Drives conditional
+    /// `strconv` import in the emitted controller file.
+    #[must_use]
+    pub fn needs_strconv_import(&self) -> bool {
+        self.per_method.values().any(|o| {
+            matches!(
+                o.body_template,
+                Some(BodyTemplate::Int64FromExternalName { .. })
+            )
+        })
     }
 }
 
@@ -257,6 +310,7 @@ fn akeyless_resource_shape_overrides() -> BTreeMap<String, ResourceShape> {
                 MethodOverride {
                     identifier_field: Some("Id".to_string()),
                     identifier_pointer: Some(false),
+                    ..Default::default()
                 },
             ),
     );
@@ -278,15 +332,144 @@ fn akeyless_resource_shape_overrides() -> BTreeMap<String, ResourceShape> {
         ),
     );
 
-    // Remaining stubs — composite keys / mixed-int64-vs-string IDs /
-    // singleton bodies / per-method-different-identifier-name with
-    // shapes ResourceShape's expression surface doesn't yet reach.
-    // Slated for next M3.2 graduation slice (NoIdentifier mode +
-    // Int64 identifier + composite-key support).
-    m.insert("account_custom_field".into(), ResourceShape::stub()); // Id int64 on Get/Delete (need int64 support)
-    m.insert("kmip_environment".into(), ResourceShape::stub()); // Describe/Delete have no identifier (need NoIdentifier mode)
-    m.insert("role_auth_method_assoc".into(), ResourceShape::stub()); // composite (RoleName + AmName) on Create
-    m.insert("role_rule".into(), ResourceShape::stub()); // composite (RoleName + Path) on Set/Delete
+    // kmip_environment: Read+Delete have no identifier (singleton bodies).
+    // Create uses Hostname (alt-field).
+    m.insert(
+        "kmip_environment".into(),
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Read,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::NoIdentifier),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Create,
+                MethodOverride {
+                    identifier_field: Some("Hostname".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Delete,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::NoIdentifier),
+                    ..Default::default()
+                },
+            ),
+    );
+
+    // account_custom_field: Read/Update/Delete bodies use Id int64;
+    // Create uses Name string.
+    let int64_id = || MethodOverride {
+        body_template: Some(BodyTemplate::Int64FromExternalName {
+            field: "Id".to_string(),
+        }),
+        ..Default::default()
+    };
+    m.insert(
+        "account_custom_field".into(),
+        ResourceShape::default()
+            .with_method_override(CrudMethod::Read, int64_id())
+            .with_method_override(CrudMethod::Update, int64_id())
+            .with_method_override(CrudMethod::Delete, int64_id()),
+    );
+
+    // role_rule: composite (RoleName + Path) on all four methods.
+    // Read uses GetRole which only needs the role name.
+    let role_rule_set_fields = vec![
+        SpecFieldMapping {
+            body_field: "RoleName".to_string(),
+            spec_field: "RoleName".to_string(),
+            pointer: false,
+        },
+        SpecFieldMapping {
+            body_field: "Path".to_string(),
+            spec_field: "Path".to_string(),
+            pointer: false,
+        },
+    ];
+    m.insert(
+        "role_rule".into(),
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Read,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::SpecFields(vec![SpecFieldMapping {
+                        body_field: "Name".to_string(),
+                        spec_field: "RoleName".to_string(),
+                        pointer: false,
+                    }])),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Create,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::SpecFields(role_rule_set_fields.clone())),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Update,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::SpecFields(role_rule_set_fields.clone())),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Delete,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::SpecFields(role_rule_set_fields)),
+                    ..Default::default()
+                },
+            ),
+    );
+
+    // role_auth_method_assoc: composite (RoleName + AmName) on Create;
+    // Read uses GetRole (single Name field); Delete uses AssocId (from
+    // external-name, set when Create succeeds).
+    m.insert(
+        "role_auth_method_assoc".into(),
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Read,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::SpecFields(vec![SpecFieldMapping {
+                        body_field: "Name".to_string(),
+                        spec_field: "RoleName".to_string(),
+                        pointer: false,
+                    }])),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Create,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::SpecFields(vec![
+                        SpecFieldMapping {
+                            body_field: "RoleName".to_string(),
+                            spec_field: "RoleName".to_string(),
+                            pointer: false,
+                        },
+                        SpecFieldMapping {
+                            body_field: "AmName".to_string(),
+                            spec_field: "AmName".to_string(),
+                            pointer: false,
+                        },
+                    ])),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Delete,
+                MethodOverride {
+                    identifier_field: Some("AssocId".to_string()),
+                    ..Default::default()
+                },
+            ),
+    );
     m
 }
 
@@ -317,6 +500,9 @@ pub fn build_controller_file(
     // Imports — stdlib first (printer groups), then third-party with aliases.
     file.imports.push(GoImport::plain("context"));
     file.imports.push(GoImport::plain("errors"));
+    if shape.needs_strconv_import() {
+        file.imports.push(GoImport::plain("strconv"));
+    }
     file.imports.push(GoImport::plain("time"));
     // xpv1 (xpv1.Available) and meta (meta.GetExternalName) are only
     // referenced by non-stub Observe/Create/Update/Delete bodies.
@@ -388,17 +574,24 @@ pub fn build_controller_file(
     file
 }
 
-/// Build the body-construction prelude + composite. When the
-/// effective shape's identifier is `*string`, emits a
-/// `name := meta.GetExternalName(cr)` preamble + `&name` in the
-/// composite; otherwise inlines the call. Identifier-field name comes
-/// from the effective (resolved) shape so per-method overrides apply.
+/// Build the body-construction prelude + composite. Dispatches on
+/// the effective shape's `body_template`:
+///
+///   - `Some(NoIdentifier)`         → empty body except `Token`
+///   - `Some(Int64FromExternalName)` → strconv parse + int64 field
+///   - `Some(SpecFields)`           → multi-field from cr.Spec.ForProvider
+///   - `None`                       → default string-identifier path
+///                                     (uses identifier_field +
+///                                     identifier_pointer)
 fn build_request_body(
     body_type: &str,
     shape: &ResourceShape,
     method: CrudMethod,
 ) -> (Vec<GoStmt>, GoExpr) {
     let eff = shape.for_method(method);
+    if let Some(template) = eff.body_template.as_ref() {
+        return build_body_from_template(body_type, template);
+    }
     let id_value = if eff.identifier_pointer {
         GoExpr::AddressOf(Box::new(GoExpr::ident("name")))
     } else {
@@ -433,6 +626,85 @@ fn build_request_body(
         addr_of: false,
     };
     (preamble, composite)
+}
+
+fn build_body_from_template(body_type: &str, template: &BodyTemplate) -> (Vec<GoStmt>, GoExpr) {
+    match template {
+        BodyTemplate::NoIdentifier => {
+            let composite = GoExpr::Composite {
+                ty: GoType::qualified("akeyless", body_type),
+                fields: vec![(
+                    Some("Token".to_string()),
+                    GoExpr::AddressOf(Box::new(GoExpr::sel(
+                        GoExpr::ident("e"),
+                        "token",
+                    ))),
+                )],
+                addr_of: false,
+            };
+            (vec![], composite)
+        }
+        BodyTemplate::Int64FromExternalName { field } => {
+            // id, _ := strconv.ParseInt(meta.GetExternalName(cr), 10, 64)
+            let preamble = vec![GoStmt::ShortDecl {
+                names: vec!["id".to_string(), "_".to_string()],
+                values: vec![GoExpr::call(
+                    GoExpr::path(&["strconv", "ParseInt"]),
+                    vec![
+                        GoExpr::call(
+                            GoExpr::path(&["meta", "GetExternalName"]),
+                            vec![GoExpr::ident("cr")],
+                        ),
+                        GoExpr::Lit(GoLit::Int(10)),
+                        GoExpr::Lit(GoLit::Int(64)),
+                    ],
+                )],
+            }];
+            let composite = GoExpr::Composite {
+                ty: GoType::qualified("akeyless", body_type),
+                fields: vec![
+                    (Some(field.clone()), GoExpr::ident("id")),
+                    (
+                        Some("Token".to_string()),
+                        GoExpr::AddressOf(Box::new(GoExpr::sel(
+                            GoExpr::ident("e"),
+                            "token",
+                        ))),
+                    ),
+                ],
+                addr_of: false,
+            };
+            (preamble, composite)
+        }
+        BodyTemplate::SpecFields(mappings) => {
+            // body := akeyless.X{Field1: cr.Spec.ForProvider.Spec1, ..., Token: &e.token}
+            let mut fields: Vec<(Option<String>, GoExpr)> = mappings
+                .iter()
+                .map(|m| {
+                    let value = GoExpr::path(&["cr", "Spec", "ForProvider", m.spec_field.as_str()]);
+                    let value = if m.pointer {
+                        GoExpr::AddressOf(Box::new(value))
+                    } else {
+                        value
+                    };
+                    (Some(m.body_field.clone()), value)
+                })
+                .collect();
+            fields.push((
+                Some("Token".to_string()),
+                GoExpr::AddressOf(Box::new(GoExpr::sel(
+                    GoExpr::ident("e"),
+                    "token",
+                ))),
+            ));
+            let composite = GoExpr::Composite {
+                ty: GoType::qualified("akeyless", body_type),
+                fields,
+                addr_of: false,
+            };
+            (vec![], composite)
+        }
+    }
 }
 
 fn build_disconnect_func() -> GoFuncDecl {
