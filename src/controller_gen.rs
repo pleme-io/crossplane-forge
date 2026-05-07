@@ -304,10 +304,7 @@ fn build_connect_func(kind: &str) -> GoFuncDecl {
     // if !ok { return nil, errors.New("expected *v1alpha1.<Kind>") }
     body.push(GoStmt::If {
         init: None,
-        cond: GoExpr::Selector {
-            recv: Box::new(GoExpr::ident("!ok")),
-            sel: String::new(),
-        }, // hack — but goast doesn't have a UnaryNot today; emit "!ok" as Ident
+        cond: GoExpr::ident("!ok"),
         body: {
             let mut b = GoBlock::new();
             b.push(GoStmt::Return(vec![
