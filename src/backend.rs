@@ -272,11 +272,22 @@ pub fn controller_config_for(provider: &IacProvider) -> ControllerConfig {
     let provider_module = crossplane_str(&provider.platform_config, "provider_module")
         .unwrap_or_else(|| format!("github.com/pleme-io/crossplane-{}", provider.name));
 
+    // Pre-populated resource shape overrides — for akeyless we hardcode
+    // the heterogeneous-body resources surfaced by the M5 build cycle;
+    // future iteration replaces this with OpenAPI introspection at
+    // generation time.
+    let resource_shapes = if provider.name == "akeyless" {
+        ControllerConfig::akeyless_default().resource_shapes
+    } else {
+        std::collections::BTreeMap::new()
+    };
+
     ControllerConfig {
         sdk_module,
         provider_module,
         api_group: group,
         api_version,
+        resource_shapes,
     }
 }
 
