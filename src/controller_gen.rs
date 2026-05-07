@@ -184,15 +184,21 @@ pub fn build_controller_file(
     file.imports.push(GoImport::plain("context"));
     file.imports.push(GoImport::plain("errors"));
     file.imports.push(GoImport::plain("time"));
-    file.imports.push(GoImport::aliased(
-        "xpv1",
-        "github.com/crossplane/crossplane-runtime/apis/common/v1",
-    ));
+    // xpv1 (xpv1.Available) and meta (meta.GetExternalName) are only
+    // referenced by non-stub Observe/Create/Update/Delete bodies.
+    // Skip them when the controller is fully stubbed to avoid Go's
+    // "imported and not used" error.
+    if !shape.stub {
+        file.imports.push(GoImport::aliased(
+            "xpv1",
+            "github.com/crossplane/crossplane-runtime/apis/common/v1",
+        ));
+        file.imports.push(GoImport::plain(
+            "github.com/crossplane/crossplane-runtime/pkg/meta",
+        ));
+    }
     file.imports.push(GoImport::plain(
         "github.com/crossplane/crossplane-runtime/pkg/logging",
-    ));
-    file.imports.push(GoImport::plain(
-        "github.com/crossplane/crossplane-runtime/pkg/meta",
     ));
     file.imports.push(GoImport::plain(
         "github.com/crossplane/crossplane-runtime/pkg/reconciler/managed",
@@ -1063,7 +1069,7 @@ fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
 // graduates each one as the body-mapping work lands.
 
 fn build_stub_observe(kind: &str) -> GoFuncDecl {
-    let mut body = type_assert_into_cr(kind, &observation_return_path());
+    let mut body = type_assert_discard_cr(kind, &observation_return_path());
     body.push(GoStmt::Comment(
         "Stub: body-mapping pending M3.2 graduation — returns ResourceExists=false".to_string(),
     ));
@@ -1107,7 +1113,7 @@ fn build_stub_observe(kind: &str) -> GoFuncDecl {
 }
 
 fn build_stub_create(kind: &str) -> GoFuncDecl {
-    let mut body = type_assert_into_cr(kind, &creation_return_path());
+    let mut body = type_assert_discard_cr(kind, &creation_return_path());
     body.push(GoStmt::Comment(
         "Stub: body-mapping pending M3.2 graduation.".to_string(),
     ));
@@ -1145,7 +1151,7 @@ fn build_stub_create(kind: &str) -> GoFuncDecl {
 }
 
 fn build_stub_update(kind: &str) -> GoFuncDecl {
-    let mut body = type_assert_into_cr(kind, &update_return_path());
+    let mut body = type_assert_discard_cr(kind, &update_return_path());
     body.push(GoStmt::Comment(
         "Stub: body-mapping pending M3.2 graduation.".to_string(),
     ));
@@ -1252,6 +1258,43 @@ fn build_stub_delete(kind: &str) -> GoFuncDecl {
 }
 
 // ── Per-method body helpers ──────────────────────────────────────────────
+
+/// Like [`type_assert_into_cr`] but discards the receiver pointer
+/// (`_, ok :=` instead of `cr, ok :=`). Used by stub controllers
+/// that only need to verify the type matches.
+fn type_assert_discard_cr(kind: &str, return_zero: &GoType) -> GoBlock {
+    let mut b = GoBlock::new();
+    b.push(GoStmt::ShortDecl {
+        names: vec!["_".to_string(), "ok".to_string()],
+        values: vec![GoExpr::TypeAssert {
+            x: Box::new(GoExpr::ident("mg")),
+            ty: GoType::pointer(GoType::qualified("v1alpha1", kind)),
+            with_ok: true,
+        }],
+    });
+    b.push(GoStmt::If {
+        init: None,
+        cond: GoExpr::ident("!ok"),
+        body: {
+            let mut inner = GoBlock::new();
+            inner.push(GoStmt::Return(vec![
+                GoExpr::Composite {
+                    ty: return_zero.clone(),
+                    fields: vec![],
+                    addr_of: false,
+                },
+                GoExpr::call(
+                    GoExpr::path(&["errors", "New"]),
+                    vec![GoExpr::str(&format!("expected *v1alpha1.{kind}"))],
+                ),
+            ]));
+            inner
+        },
+        else_body: None,
+    });
+    b.push(GoStmt::Blank);
+    b
+}
 
 fn type_assert_into_cr(kind: &str, return_zero: &GoType) -> GoBlock {
     // cr, ok := mg.(*v1alpha1.<Kind>)
