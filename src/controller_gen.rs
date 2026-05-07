@@ -77,6 +77,9 @@ pub fn build_controller_file(
         "github.com/crossplane/crossplane-runtime/apis/common/v1",
     ));
     file.imports.push(GoImport::plain(
+        "github.com/crossplane/crossplane-runtime/pkg/logging",
+    ));
+    file.imports.push(GoImport::plain(
         "github.com/crossplane/crossplane-runtime/pkg/meta",
     ));
     file.imports.push(GoImport::plain(
@@ -232,8 +235,11 @@ fn build_setup_func(kind: &str) -> GoFuncDecl {
             GoExpr::call(
                 GoExpr::path(&["managed", "WithLogger"]),
                 vec![GoExpr::call(
-                    GoExpr::path(&["ctrl", "Log", "WithName"]),
-                    vec![GoExpr::ident("name")],
+                    GoExpr::path(&["logging", "NewLogrLogger"]),
+                    vec![GoExpr::call(
+                        GoExpr::path(&["ctrl", "Log", "WithName"]),
+                        vec![GoExpr::ident("name")],
+                    )],
                 )],
             ),
         ],
@@ -815,6 +821,15 @@ fn build_delete_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
     let delete_method = sdk_naming::go_method_name(&resource.crud.delete_schema);
     let delete_body_type = sdk_naming::go_body_type_name(&resource.crud.delete_schema);
 
+    // crossplane-runtime v1.18 changed Delete's signature from `error` to
+    // `(managed.ExternalDelete, error)`. The zero ExternalDelete value is
+    // returned on success.
+    let zero_external_delete = GoExpr::Composite {
+        ty: GoType::qualified("managed", "ExternalDelete"),
+        fields: vec![],
+        addr_of: false,
+    };
+
     // Type assert: cr, ok := mg.(*v1alpha1.<Kind>)
     let mut body = GoBlock::new();
     body.push(GoStmt::ShortDecl {
@@ -830,10 +845,13 @@ fn build_delete_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
         cond: GoExpr::ident("!ok"),
         body: {
             let mut b = GoBlock::new();
-            b.push(GoStmt::Return(vec![GoExpr::call(
-                GoExpr::path(&["errors", "New"]),
-                vec![GoExpr::str(&format!("expected *v1alpha1.{kind}"))],
-            )]));
+            b.push(GoStmt::Return(vec![
+                zero_external_delete.clone(),
+                GoExpr::call(
+                    GoExpr::path(&["errors", "New"]),
+                    vec![GoExpr::str(&format!("expected *v1alpha1.{kind}"))],
+                ),
+            ]));
             b
         },
         else_body: None,
@@ -869,11 +887,17 @@ fn build_delete_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
     body.push(GoStmt::Comment(
         "TODO controller-iter-2: swallow 404 so deletion is idempotent.".to_string(),
     ));
-    body.push(GoStmt::Return(vec![GoExpr::ident("err")]));
+    body.push(GoStmt::Return(vec![
+        zero_external_delete,
+        GoExpr::ident("err"),
+    ]));
 
     GoFuncDecl {
         name: "Delete".to_string(),
-        doc: Some("Delete removes the upstream resource. Idempotent on NotFound.".to_string()),
+        doc: Some(
+            "Delete removes the upstream resource. Idempotent on NotFound.\nSignature follows crossplane-runtime v1.18+: returns (ExternalDelete, error)."
+                .to_string(),
+        ),
         recv: Some(GoRecv {
             name: "e".to_string(),
             ty: GoType::pointer(GoType::named("external")),
@@ -888,7 +912,10 @@ fn build_delete_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
                 ty: GoType::qualified("resource", "Managed"),
             },
         ],
-        returns: vec![GoType::named("error")],
+        returns: vec![
+            GoType::qualified("managed", "ExternalDelete"),
+            GoType::named("error"),
+        ],
         body,
     }
 }
@@ -1172,6 +1199,23 @@ mod tests {
         assert!(rendered.contains(
             "e.client.V2API.DeleteAuthMethod(ctx).DeleteAuthMethod(body).Execute()"
         ));
+        // v1.18 return shape — both error paths return managed.ExternalDelete{}
+        assert!(rendered.contains("return managed.ExternalDelete{}, err"));
+        assert!(rendered.contains("return managed.ExternalDelete{}, errors.New("));
+    }
+
+    #[test]
+    fn setup_func_wraps_logger_in_logging_logr_wrapper() {
+        // M5.3 regression: managed.WithLogger requires Crossplane's
+        // logging.Logger interface, not raw logr.Logger from
+        // controller-runtime. Wrap via logging.NewLogrLogger.
+        let s = render_controller(
+            &auth_method_api_key(),
+            &akeyless_provider(),
+            &ControllerConfig::akeyless_default(),
+        );
+        assert!(s.contains("managed.WithLogger(logging.NewLogrLogger(ctrl.Log.WithName(name)))"));
+        assert!(s.contains("\"github.com/crossplane/crossplane-runtime/pkg/logging\""));
     }
 
     #[test]
@@ -1280,10 +1324,15 @@ mod tests {
     }
 
     #[test]
-    fn delete_returns_only_error() {
+    fn delete_returns_external_delete_and_error_v1_18() {
         let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey");
-        assert_eq!(f.returns.len(), 1);
-        assert!(matches!(f.returns[0], GoType::Named(ref n) if n == "error"));
+        assert_eq!(f.returns.len(), 2);
+        assert!(matches!(
+            f.returns[0],
+            GoType::Qualified { ref pkg, ref name }
+                if pkg == "managed" && name == "ExternalDelete",
+        ));
+        assert!(matches!(f.returns[1], GoType::Named(ref n) if n == "error"));
     }
 
     #[test]
