@@ -61,6 +61,15 @@ pub fn render_setup_go(
 }
 
 #[must_use]
+pub fn render_apis_aggregator(
+    resources: &[IacResource],
+    provider: &IacProvider,
+    config: &ControllerConfig,
+) -> String {
+    print_file(&build_apis_aggregator_file(resources, provider, config))
+}
+
+#[must_use]
 pub fn render_go_mod(provider: &IacProvider, config: &ControllerConfig) -> String {
     let _ = provider;
     let m = build_go_mod(config);
@@ -673,6 +682,107 @@ fn exit_on_err(label: &str) -> GoStmt {
         body: exit_block(label),
         else_body: None,
     }
+}
+
+/// `apis/apis.go` — aggregates every per-resource v1alpha1 SchemeBuilder
+/// + the per-provider v1alpha1 SchemeBuilder behind a single
+/// `AddToScheme` symbol. `cmd/provider/main.go` calls this to register
+/// every CRD into the controller-runtime manager's scheme.
+#[must_use]
+pub fn build_apis_aggregator_file(
+    resources: &[IacResource],
+    provider: &IacProvider,
+    config: &ControllerConfig,
+) -> GoFile {
+    let mut file = GoFile::new("apis");
+    file.imports.push(GoImport::plain(
+        "k8s.io/apimachinery/pkg/runtime",
+    ));
+    let provider_pkg = provider.name.replace('-', "");
+    // Provider-level v1alpha1 (ProviderConfig package)
+    file.imports.push(GoImport::aliased(
+        &format!("{provider_pkg}v1alpha1"),
+        &format!("{}/apis/{}/v1alpha1", config.provider_module, provider_pkg),
+    ));
+    // Per-resource v1alpha1 packages (alias the v1alpha1 package by the
+    // resource pkg name to avoid collisions on the import path)
+    for r in resources {
+        let pkg = package_name(r, provider);
+        file.imports.push(GoImport::aliased(
+            &pkg,
+            &format!("{}/apis/{pkg}/v1alpha1", config.provider_module),
+        ));
+    }
+
+    // var AddToScheme = func(s *runtime.Scheme) error {
+    //     builders := []func(*runtime.Scheme) error{ pkg.AddToScheme, ... }
+    //     for _, b := range builders { if err := b(s); err != nil { return err } }
+    //     return nil
+    // }
+    let mut builder_elements: Vec<GoExpr> = vec![GoExpr::Selector {
+        recv: Box::new(GoExpr::ident(&format!("{provider_pkg}v1alpha1"))),
+        sel: "AddToScheme".to_string(),
+    }];
+    for r in resources {
+        let pkg = package_name(r, provider);
+        builder_elements.push(GoExpr::Selector {
+            recv: Box::new(GoExpr::ident(&pkg)),
+            sel: "AddToScheme".to_string(),
+        });
+    }
+    let func_sig_ty = GoType::FuncSignature {
+        params: vec![GoType::pointer(GoType::qualified("runtime", "Scheme"))],
+        returns: vec![GoType::named("error")],
+    };
+    let mut fn_body = GoBlock::new();
+    fn_body.push(GoStmt::ShortDecl {
+        names: vec!["builders".to_string()],
+        values: vec![GoExpr::SliceLit {
+            elem_type: func_sig_ty.clone(),
+            elements: builder_elements,
+        }],
+    });
+    let mut for_body = GoBlock::new();
+    for_body.push(GoStmt::If {
+        init: Some(Box::new(GoStmt::ShortDecl {
+            names: vec!["err".to_string()],
+            values: vec![GoExpr::call(
+                GoExpr::ident("b"),
+                vec![GoExpr::ident("s")],
+            )],
+        })),
+        cond: GoExpr::ident("err != nil"),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Return(vec![GoExpr::ident("err")]));
+            b
+        },
+        else_body: None,
+    });
+    fn_body.push(GoStmt::ForRange {
+        key: None,
+        value: Some("b".to_string()),
+        range: GoExpr::ident("builders"),
+        body: for_body,
+    });
+    fn_body.push(GoStmt::Return(vec![GoExpr::nil()]));
+
+    file.decls.push(GoDecl::Func(GoFuncDecl {
+        name: "AddToScheme".to_string(),
+        doc: Some(
+            "AddToScheme registers every CRD kind emitted by this provider with the\nsupplied controller-runtime scheme. Invoked by cmd/provider/main.go."
+                .to_string(),
+        ),
+        recv: None,
+        params: vec![GoParam {
+            name: "s".to_string(),
+            ty: GoType::pointer(GoType::qualified("runtime", "Scheme")),
+        }],
+        returns: vec![GoType::named("error")],
+        body: fn_body,
+    }));
+
+    file
 }
 
 #[must_use]

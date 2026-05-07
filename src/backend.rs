@@ -157,6 +157,11 @@ impl Backend for CrossplaneBackend {
         let pc_gvi_go = provider_gen::render_provider_groupversion_info(provider, &cfg);
         let pc_gvi_path = format!("apis/{provider_pkg}/v1alpha1/groupversion_info.go");
 
+        // apis/apis.go — aggregates every per-resource SchemeBuilder
+        // behind a single AddToScheme that cmd/provider/main.go calls.
+        let apis_aggregator_go = provider_gen::render_apis_aggregator(resources, provider, &cfg);
+        let apis_aggregator_path = "apis/apis.go".to_string();
+
         // main.go + setup.go
         let main_go = provider_gen::render_main_go(provider, &cfg);
         let main_path = "cmd/provider/main.go".to_string();
@@ -181,6 +186,11 @@ impl Backend for CrossplaneBackend {
                 ArtifactKind::ProviderConfig,
             ),
             GeneratedArtifact::new(pc_gvi_path, pc_gvi_go, ArtifactKind::Module),
+            GeneratedArtifact::new(
+                apis_aggregator_path,
+                apis_aggregator_go,
+                ArtifactKind::Module,
+            ),
             GeneratedArtifact::new(main_path, main_go, ArtifactKind::Provider),
             GeneratedArtifact::new(setup_path, setup_go, ArtifactKind::Module),
             GeneratedArtifact::new("go.mod".to_string(), go_mod, ArtifactKind::Metadata),
@@ -432,6 +442,7 @@ mod tests {
             "package/crds/providerconfig-crd.yaml",
             "apis/akeyless/v1alpha1/providerconfig_types.go",
             "apis/akeyless/v1alpha1/groupversion_info.go",
+            "apis/apis.go",
             "cmd/provider/main.go",
             "internal/controller/setup.go",
             "go.mod",
@@ -442,6 +453,33 @@ mod tests {
         ] {
             assert!(paths.contains(p), "missing scaffold artifact: {p}");
         }
+    }
+
+    #[test]
+    fn apis_aggregator_imports_provider_pkg_and_each_resource_pkg() {
+        let backend = CrossplaneBackend;
+        let provider = make_test_provider();
+        let resources = vec![make_test_resource()]; // staticsecret
+        let arts = backend
+            .generate_provider(&provider, &resources, &[])
+            .unwrap();
+        let agg = arts
+            .iter()
+            .find(|a| a.path == "apis/apis.go")
+            .expect("apis/apis.go present");
+        // Provider package import (akeylessv1alpha1)
+        assert!(agg
+            .content
+            .contains("akeylessv1alpha1 \"github.com/pleme-io/crossplane-akeyless/apis/akeyless/v1alpha1\""));
+        // Per-resource package import
+        assert!(agg
+            .content
+            .contains("staticsecret \"github.com/pleme-io/crossplane-akeyless/apis/staticsecret/v1alpha1\""));
+        // AddToScheme aggregator
+        assert!(agg.content.contains("func AddToScheme(s *runtime.Scheme) error {"));
+        // Builders slice references each pkg's AddToScheme
+        assert!(agg.content.contains("akeylessv1alpha1.AddToScheme,"));
+        assert!(agg.content.contains("staticsecret.AddToScheme,"));
     }
 
     #[test]
@@ -461,8 +499,8 @@ mod tests {
         assert_eq!(by_kind.get("provider").copied().unwrap_or(0), 2);
         // ProviderConfig types = 1
         assert_eq!(by_kind.get("provider_config").copied().unwrap_or(0), 1);
-        // groupversion_info + setup.go = 2 Module artifacts
-        assert_eq!(by_kind.get("module").copied().unwrap_or(0), 2);
+        // groupversion_info + setup.go + apis.go = 3 Module artifacts
+        assert_eq!(by_kind.get("module").copied().unwrap_or(0), 3);
         // go.mod = 1 Metadata
         assert_eq!(by_kind.get("metadata").copied().unwrap_or(0), 1);
         // helm/* = 4 HelmChart
