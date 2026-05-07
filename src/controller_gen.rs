@@ -138,21 +138,21 @@ impl ControllerConfig {
 #[must_use]
 fn akeyless_resource_shape_overrides() -> BTreeMap<String, ResourceShape> {
     let mut m = BTreeMap::new();
-    // Class A: identifier is `*string` not `string`.
-    m.insert("certificate".into(), ResourceShape::name_pointer());
-    m.insert("kmip_client".into(), ResourceShape::name_pointer());
-    // Class B-simple: alternate single-string identifier field.
+    // Class B-simple: alternate single-string identifier field uniform across CRUD.
     m.insert("esm".into(), ResourceShape::alt_field("EsmName"));
     m.insert("usc".into(), ResourceShape::alt_field("UscName"));
     // Class B-complex: composite keys / mixed-per-CRUD identifiers /
-    // singleton bodies / int64 identifiers — emit stub controllers
-    // pending M3.2 graduation.
-    m.insert("account_custom_field".into(), ResourceShape::stub());
-    m.insert("gateway_migration".into(), ResourceShape::stub());
-    m.insert("kmip_environment".into(), ResourceShape::stub());
-    m.insert("policy".into(), ResourceShape::stub());
-    m.insert("role_auth_method_assoc".into(), ResourceShape::stub());
-    m.insert("role_rule".into(), ResourceShape::stub());
+    // mixed-per-CRUD pointer-vs-value Name field types / singleton
+    // bodies / int64 identifiers — emit stub controllers pending M3.2
+    // graduation. Each entry below is annotated with WHY it's stubbed:
+    m.insert("account_custom_field".into(), ResourceShape::stub()); // mixed: Id int64 on Get/Delete, Name string on Create
+    m.insert("certificate".into(), ResourceShape::stub()); // mixed: GetCertificateValue.Name *string vs DeleteItem.Name string
+    m.insert("gateway_migration".into(), ResourceShape::stub()); // mixed: Name *string on Get, Id string on Delete
+    m.insert("kmip_client".into(), ResourceShape::stub()); // mixed: KmipCreateClient.Name string vs Describe/Delete *string
+    m.insert("kmip_environment".into(), ResourceShape::stub()); // singleton bodies (Describe/Delete have no Name; Setup uses Hostname)
+    m.insert("policy".into(), ResourceShape::stub()); // mixed: Path on Create/Update, Id on Get/Delete
+    m.insert("role_auth_method_assoc".into(), ResourceShape::stub()); // composite (RoleName + AmName) → AssocId on Delete
+    m.insert("role_rule".into(), ResourceShape::stub()); // composite (RoleName + Path) on Set/Delete
     m
 }
 
