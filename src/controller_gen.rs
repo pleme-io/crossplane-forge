@@ -93,6 +93,19 @@ pub struct MethodOverride {
     /// Used for SDK body shapes that don't fit the
     /// single-string-identifier pattern.
     pub body_template: Option<BodyTemplate>,
+    /// PascalCase attribute names to skip when M6.2 walks
+    /// `cr.Spec.ForProvider.*` to push fields onto the SDK body.
+    ///
+    /// Used for the per-resource per-method skip list when the TOML's
+    /// IacType disagrees with the SDK body's Go type — e.g. the TOML
+    /// says `Boolean` but the akeyless OpenAPI spec defines the same
+    /// JSON property as `*string`. Without this skip, the emitted
+    /// `body.X = cr.Spec.ForProvider.X` triggers a Go type-mismatch.
+    ///
+    /// Slice 2 graduates this to schema-driven filtering by reading
+    /// the SDK body schema from the OpenAPI spec at emit time and
+    /// auto-skipping fields whose name+type don't match.
+    pub body_field_skips: Vec<String>,
 }
 
 /// Body-construction template for a CRUD method whose SDK body
@@ -134,6 +147,9 @@ pub struct EffectiveShape {
     pub identifier_field: String,
     pub identifier_pointer: bool,
     pub body_template: Option<BodyTemplate>,
+    /// PascalCase attribute names skipped by the M6.2 broad walk for
+    /// this method.
+    pub body_field_skips: Vec<String>,
 }
 
 impl Default for ResourceShape {
@@ -197,6 +213,9 @@ impl ResourceShape {
                 .and_then(|o| o.identifier_pointer)
                 .unwrap_or(self.identifier_pointer),
             body_template: ov.and_then(|o| o.body_template.clone()),
+            body_field_skips: ov
+                .map(|o| o.body_field_skips.clone())
+                .unwrap_or_default(),
         }
     }
 
@@ -505,6 +524,87 @@ fn akeyless_resource_shape_overrides() -> BTreeMap<String, ResourceShape> {
                 },
             ),
     );
+
+    // M6.2 broad-walk per-resource skip overrides — for resources where
+    // the akeyless TOML's IacType disagrees with the akeyless-go SDK
+    // body's Go type for a given field. Each entry below was derived
+    // from `go build ./...` failures observed against the regenerated
+    // crossplane-akeyless tree on 2026-05-07. M6.4 (schema-driven
+    // filtering) replaces this hardcoded list by reading the SDK body
+    // schema from the OpenAPI spec at emit time.
+    let skip_create_update = |skips: Vec<String>| {
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Create,
+                MethodOverride {
+                    body_field_skips: skips.clone(),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Update,
+                MethodOverride {
+                    body_field_skips: skips,
+                    ..Default::default()
+                },
+            )
+    };
+    // sshcertissuer: DeleteProtection is *bool in Parameters but *string
+    // in CreateSSHCertIssuer / UpdateSSHCertIssuer body schemas.
+    m.insert(
+        "ssh_cert_issuer".into(),
+        skip_create_update(vec!["DeleteProtection".to_string()]),
+    );
+    // targetwindows: UseTls is *bool in Parameters but *string in the
+    // TargetCreateWindows / TargetUpdateWindows body schemas.
+    m.insert(
+        "target_windows".into(),
+        skip_create_update(vec!["UseTls".to_string()]),
+    );
+    // rotatedsecretwindows: DeleteProtection bool/string mismatch +
+    // RotationHour int64/int32 mismatch + Update body lacks TargetName.
+    m.insert(
+        "rotated_secret_windows".into(),
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Create,
+                MethodOverride {
+                    body_field_skips: vec![
+                        "DeleteProtection".to_string(),
+                        "RotationHour".to_string(),
+                    ],
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Update,
+                MethodOverride {
+                    body_field_skips: vec![
+                        "DeleteProtection".to_string(),
+                        "RotationHour".to_string(),
+                        "TargetName".to_string(),
+                    ],
+                    ..Default::default()
+                },
+            ),
+    );
+    // usc: Update body (UscUpdate) lacks ObjectType / Region / SecretName
+    // — those exist only on UscCreate. Inherit the alt_field("UscName")
+    // identifier and skip on Update.
+    m.insert(
+        "usc".into(),
+        ResourceShape::alt_field("UscName").with_method_override(
+            CrudMethod::Update,
+            MethodOverride {
+                body_field_skips: vec![
+                    "ObjectType".to_string(),
+                    "Region".to_string(),
+                    "SecretName".to_string(),
+                ],
+                ..Default::default()
+            },
+        ),
+    );
     m
 }
 
@@ -696,6 +796,12 @@ fn build_request_body(
             }
             let pascal = pascal_case_field(&attr.canonical_name);
             if pascal == eff.identifier_field {
+                continue;
+            }
+            // Per-resource per-method skip list — used when the TOML's
+            // IacType disagrees with the SDK body's Go type (slice 1
+            // workaround until schema-driven filtering lands as M6.4).
+            if eff.body_field_skips.iter().any(|s| s == &pascal) {
                 continue;
             }
             // Scalar types only — types_gen collapses List/Map/Object to
