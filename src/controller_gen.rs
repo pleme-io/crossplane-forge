@@ -14,7 +14,7 @@ use iac_forge::goast::{
     GoBlock, GoDecl, GoExpr, GoField, GoFile, GoFuncDecl, GoImport, GoLit, GoParam, GoRecv,
     GoStmt, GoStructTag, GoType, GoTypeBody, GoTypeDecl, JsonTag, print_file,
 };
-use iac_forge::ir::{IacProvider, IacResource};
+use iac_forge::ir::{IacProvider, IacResource, IacType};
 use iac_forge::naming::{strip_provider_prefix, to_pascal_case};
 use iac_forge::sdk_naming;
 
@@ -634,10 +634,21 @@ pub fn build_controller_file(
 ///   - `None`                       → default string-identifier path
 ///                                     (uses identifier_field +
 ///                                     identifier_pointer)
+///
+/// M6.2 — Create/Update default-branch bodies additionally walk
+/// `resource.attributes` and push every non-computed non-identifier
+/// scalar field as `BodyField: cr.Spec.ForProvider.BodyField`. Read +
+/// Delete keep the identifier-only shape because akeyless's GET/DELETE
+/// body schemas don't carry the Parameters fields. Pointer-ness on
+/// pushed fields matches the Parameters struct (same TOML-driven
+/// required/optional flag drives both the Parameters emit in
+/// `types_gen` AND the SDK body schema in `akeyless-go`), so we can
+/// pass the field reference directly without addr-of/deref tricks.
 fn build_request_body(
     body_type: &str,
     shape: &ResourceShape,
     method: CrudMethod,
+    resource: &IacResource,
 ) -> (Vec<GoStmt>, GoExpr) {
     let eff = shape.for_method(method);
     if let Some(template) = eff.body_template.as_ref() {
@@ -662,21 +673,56 @@ fn build_request_body(
     } else {
         vec![]
     };
+    let mut fields: Vec<(Option<String>, GoExpr)> = vec![
+        (Some(eff.identifier_field.clone()), id_value),
+        (
+            Some("Token".to_string()),
+            GoExpr::AddressOf(Box::new(GoExpr::sel(
+                GoExpr::ident("e"),
+                "token",
+            ))),
+        ),
+    ];
+    if matches!(method, CrudMethod::Create | CrudMethod::Update) {
+        for attr in &resource.attributes {
+            if attr.computed {
+                continue;
+            }
+            // Skip the identifier itself + the `token` attribute — both
+            // already explicitly set above. (akeyless TOMLs don't put
+            // `token` in attributes today, but guarding is cheap.)
+            if attr.canonical_name == "token" {
+                continue;
+            }
+            let pascal = pascal_case_field(&attr.canonical_name);
+            if pascal == eff.identifier_field {
+                continue;
+            }
+            // Scalar types only — types_gen collapses List/Map/Object to
+            // opaque string today (slice 1). When types_gen graduates
+            // structural collections (slice 2), this filter relaxes.
+            if !matches!(
+                attr.iac_type,
+                IacType::String | IacType::Integer | IacType::Float | IacType::Numeric | IacType::Boolean
+            ) {
+                continue;
+            }
+            fields.push((
+                Some(pascal.clone()),
+                GoExpr::path(&["cr", "Spec", "ForProvider", &pascal]),
+            ));
+        }
+    }
     let composite = GoExpr::Composite {
         ty: GoType::qualified("akeyless", body_type),
-        fields: vec![
-            (Some(eff.identifier_field), id_value),
-            (
-                Some("Token".to_string()),
-                GoExpr::AddressOf(Box::new(GoExpr::sel(
-                    GoExpr::ident("e"),
-                    "token",
-                ))),
-            ),
-        ],
+        fields,
         addr_of: false,
     };
     (preamble, composite)
+}
+
+fn pascal_case_field(canonical: &str) -> String {
+    iac_forge::naming::to_pascal_case(&iac_forge::naming::to_snake_case(canonical))
 }
 
 fn build_body_from_template(body_type: &str, template: &BodyTemplate) -> (Vec<GoStmt>, GoExpr) {
@@ -1373,7 +1419,7 @@ fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape)
     let read_body_type = sdk_naming::go_body_type_name(&resource.crud.read_schema);
 
     let mut body = type_assert_into_cr(kind, &observation_return_path());
-    let (preamble, composite) = build_request_body(&read_body_type, shape, CrudMethod::Read);
+    let (preamble, composite) = build_request_body(&read_body_type, shape, CrudMethod::Read, resource);
     for s in preamble {
         body.push(s);
     }
@@ -1499,7 +1545,7 @@ fn build_create_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
     let create_body_type = sdk_naming::go_body_type_name(&resource.crud.create_schema);
 
     let mut body = type_assert_into_cr(kind, &creation_return_path());
-    let (preamble, composite) = build_request_body(&create_body_type, shape, CrudMethod::Create);
+    let (preamble, composite) = build_request_body(&create_body_type, shape, CrudMethod::Create, resource);
     for s in preamble {
         body.push(s);
     }
@@ -1623,7 +1669,7 @@ fn build_update_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
     let update_body_type = sdk_naming::go_body_type_name(update_schema);
 
     let mut body = type_assert_into_cr(kind, &update_return_path());
-    let (preamble, composite) = build_request_body(&update_body_type, shape, CrudMethod::Update);
+    let (preamble, composite) = build_request_body(&update_body_type, shape, CrudMethod::Update, resource);
     for s in preamble {
         body.push(s);
     }
@@ -1719,7 +1765,7 @@ fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
         else_body: None,
     });
     body.push(GoStmt::Blank);
-    let (preamble, composite) = build_request_body(&delete_body_type, shape, CrudMethod::Delete);
+    let (preamble, composite) = build_request_body(&delete_body_type, shape, CrudMethod::Delete, resource);
     for s in preamble {
         body.push(s);
     }
@@ -2572,6 +2618,174 @@ mod tests {
         assert_eq!(fields.len(), 4);
         let names: Vec<&str> = fields.iter().filter_map(|f| f.name.as_deref()).collect();
         assert_eq!(names, vec!["AccessID", "AccessKey", "AccessIDDash", "AccessKeyDash"]);
+    }
+
+    #[test]
+    fn create_body_pushes_for_provider_scalar_fields() {
+        // Build a resource with several scalar attributes; the Create body
+        // composite must include each as `Pascal: cr.Spec.ForProvider.Pascal`.
+        use iac_forge::ir::{IacAttribute, IacType};
+        let mut r = auth_method_api_key();
+        r.attributes = vec![
+            IacAttribute {
+                canonical_name: "name".to_string(),
+                description: "Name of the auth method".to_string(),
+                iac_type: IacType::String,
+                required: true,
+                computed: false,
+                sensitive: false,
+                immutable: true,
+                api_name: String::new(),
+                optional: false,
+                json_encoded: false,
+                default_value: None,
+                enum_values: None,
+                read_path: None,
+                update_only: false,
+            },
+            IacAttribute {
+                canonical_name: "access_expires".to_string(),
+                description: "Auth method access expiration in seconds".to_string(),
+                iac_type: IacType::Integer,
+                required: false,
+                computed: false,
+                sensitive: false,
+                immutable: false,
+                api_name: String::new(),
+                optional: false,
+                json_encoded: false,
+                default_value: None,
+                enum_values: None,
+                read_path: None,
+                update_only: false,
+            },
+            IacAttribute {
+                canonical_name: "force_sub_claims".to_string(),
+                description: "if true sub-claims are required".to_string(),
+                iac_type: IacType::Boolean,
+                required: false,
+                computed: false,
+                sensitive: false,
+                immutable: false,
+                api_name: String::new(),
+                optional: false,
+                json_encoded: false,
+                default_value: None,
+                enum_values: None,
+                read_path: None,
+                update_only: false,
+            },
+            IacAttribute {
+                canonical_name: "computed_id".to_string(),
+                description: "Read-only".to_string(),
+                iac_type: IacType::String,
+                required: false,
+                computed: true, // must be EXCLUDED
+                sensitive: false,
+                immutable: false,
+                api_name: String::new(),
+                optional: false,
+                json_encoded: false,
+                default_value: None,
+                enum_values: None,
+                read_path: None,
+                update_only: false,
+            },
+            IacAttribute {
+                canonical_name: "tags".to_string(),
+                description: "tags slice".to_string(),
+                iac_type: IacType::List(Box::new(IacType::String)),
+                required: false,
+                computed: false,
+                sensitive: false,
+                immutable: false,
+                api_name: String::new(),
+                optional: false,
+                json_encoded: false,
+                default_value: None,
+                enum_values: None,
+                read_path: None,
+                update_only: false,
+            },
+        ];
+        let f = build_create_func(&r, "AuthMethodApiKey", &ResourceShape::default());
+        // Find the body short-decl
+        let body_decl = f.body.stmts.iter().find_map(|s| match s {
+            GoStmt::ShortDecl { names, values } if names == &["body".to_string()] => Some(values),
+            _ => None,
+        }).expect("body short-decl present");
+        let GoExpr::Composite { fields, .. } = &body_decl[0] else {
+            panic!("expected composite literal for body");
+        };
+        let field_names: Vec<&str> = fields
+            .iter()
+            .filter_map(|(n, _)| n.as_deref())
+            .collect();
+        // Identifier + Token always present
+        assert!(field_names.contains(&"Name"));
+        assert!(field_names.contains(&"Token"));
+        // M6.2: scalar non-computed non-identifier fields pushed
+        assert!(field_names.contains(&"AccessExpires"), "expected AccessExpires field, got {field_names:?}");
+        assert!(field_names.contains(&"ForceSubClaims"), "expected ForceSubClaims field, got {field_names:?}");
+        // Excluded: computed attributes
+        assert!(!field_names.contains(&"ComputedId"), "computed attr leaked into body, got {field_names:?}");
+        // Excluded: list/map/object types (slice 1 still opaque-string in types_gen)
+        assert!(!field_names.contains(&"Tags"), "list attr leaked into body, got {field_names:?}");
+    }
+
+    #[test]
+    fn read_body_does_not_push_for_provider_fields() {
+        // Read bodies on akeyless are identifier-only; M6.2 must NOT push
+        // spec fields into them.
+        use iac_forge::ir::{IacAttribute, IacType};
+        let mut r = auth_method_api_key();
+        r.attributes = vec![
+            IacAttribute {
+                canonical_name: "name".to_string(),
+                description: "".to_string(),
+                iac_type: IacType::String,
+                required: true,
+                computed: false,
+                sensitive: false,
+                immutable: true,
+                api_name: String::new(),
+                optional: false,
+                json_encoded: false,
+                default_value: None,
+                enum_values: None,
+                read_path: None,
+                update_only: false,
+            },
+            IacAttribute {
+                canonical_name: "access_expires".to_string(),
+                description: "".to_string(),
+                iac_type: IacType::Integer,
+                required: false,
+                computed: false,
+                sensitive: false,
+                immutable: false,
+                api_name: String::new(),
+                optional: false,
+                json_encoded: false,
+                default_value: None,
+                enum_values: None,
+                read_path: None,
+                update_only: false,
+            },
+        ];
+        let f = build_observe_func(&r, "AuthMethodApiKey", &ResourceShape::default());
+        let body_decl = f.body.stmts.iter().find_map(|s| match s {
+            GoStmt::ShortDecl { names, values } if names == &["body".to_string()] => Some(values),
+            _ => None,
+        }).expect("body short-decl present");
+        let GoExpr::Composite { fields, .. } = &body_decl[0] else {
+            panic!("expected composite literal for body");
+        };
+        let field_names: Vec<&str> = fields
+            .iter()
+            .filter_map(|(n, _)| n.as_deref())
+            .collect();
+        assert_eq!(field_names, vec!["Name", "Token"], "Read body must stay identifier-only");
     }
 
     #[test]
