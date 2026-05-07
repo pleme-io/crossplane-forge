@@ -223,10 +223,7 @@ fn deepcopy_into_for_list(list_kind: &str, item_kind: &str) -> GoFuncDecl {
         rhs: vec![GoExpr::call(
             GoExpr::ident("make"),
             vec![
-                GoExpr::SliceLit {
-                    elem_type: GoType::named(item_kind),
-                    elements: vec![],
-                },
+                GoExpr::TypeExpr(GoType::slice(GoType::named(item_kind))),
                 GoExpr::call(
                     GoExpr::ident("len"),
                     vec![GoExpr::sel(GoExpr::ident("in"), "Items")],
