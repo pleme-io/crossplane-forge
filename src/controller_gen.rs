@@ -50,17 +50,51 @@ pub struct ControllerConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ResourceShape {
-    /// Body-field name carrying the resource identifier
-    /// (defaults to `"Name"`).
+    /// Default body-field name carrying the resource identifier
+    /// (defaults to `"Name"`). Per-CRUD-method overrides in
+    /// `per_method` win when present.
     pub identifier_field: String,
-    /// Whether the identifier field is `*string` instead of `string`
-    /// (openapi-generator emits optional fields as pointers).
+    /// Default for whether the identifier field is `*string` instead
+    /// of `string`. Per-CRUD-method overrides in `per_method` win.
     pub identifier_pointer: bool,
+    /// Per-CRUD-method overrides — populated for resources whose SDK
+    /// body shape varies per method (e.g. `kmip_client.Name string`
+    /// on Create vs `*string` on Read/Delete).
+    pub per_method: BTreeMap<CrudMethod, MethodOverride>,
     /// Emit a stub controller (no SDK calls) for resources whose body
-    /// shape requires composite keys, mixed-per-CRUD identifiers, or
-    /// other non-uniform shapes M3.2 graduates. Stub controllers
+    /// shape requires composite keys / mixed-int64-vs-string IDs /
+    /// singleton bodies that ResourceShape can't yet express. Stubs
     /// satisfy the ExternalClient interface but no-op every method.
     pub stub: bool,
+}
+
+/// Which CRUD method an override applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum CrudMethod {
+    Read,
+    Create,
+    Update,
+    Delete,
+}
+
+/// Per-method override of [`ResourceShape`]'s defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct MethodOverride {
+    /// When `Some`, replaces `ResourceShape::identifier_field` for
+    /// this CRUD method.
+    pub identifier_field: Option<String>,
+    /// When `Some`, replaces `ResourceShape::identifier_pointer` for
+    /// this CRUD method.
+    pub identifier_pointer: Option<bool>,
+}
+
+/// The resolved (post-`per_method`-lookup) shape for one CRUD method.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectiveShape {
+    pub identifier_field: String,
+    pub identifier_pointer: bool,
 }
 
 impl Default for ResourceShape {
@@ -68,6 +102,7 @@ impl Default for ResourceShape {
         Self {
             identifier_field: "Name".to_string(),
             identifier_pointer: false,
+            per_method: BTreeMap::new(),
             stub: false,
         }
     }
@@ -78,9 +113,8 @@ impl ResourceShape {
     #[must_use]
     pub fn name_pointer() -> Self {
         Self {
-            identifier_field: "Name".to_string(),
             identifier_pointer: true,
-            stub: false,
+            ..Self::default()
         }
     }
 
@@ -90,19 +124,39 @@ impl ResourceShape {
     pub fn alt_field(field: impl Into<String>) -> Self {
         Self {
             identifier_field: field.into(),
-            identifier_pointer: false,
-            stub: false,
+            ..Self::default()
         }
     }
 
-    /// Stub controller — body shape doesn't fit the single-identifier
-    /// pattern; M3.2 graduation needed.
+    /// Stub controller — body shape doesn't fit any expressible
+    /// `ResourceShape`; deeper M3.2 graduation needed.
     #[must_use]
     pub fn stub() -> Self {
         Self {
-            identifier_field: String::new(),
-            identifier_pointer: false,
             stub: true,
+            ..Self::default()
+        }
+    }
+
+    /// Add a per-method override and return self (chainable builder).
+    #[must_use]
+    pub fn with_method_override(mut self, method: CrudMethod, ov: MethodOverride) -> Self {
+        self.per_method.insert(method, ov);
+        self
+    }
+
+    /// Resolve the effective shape for one CRUD method, applying
+    /// `per_method` overrides on top of the top-level defaults.
+    #[must_use]
+    pub fn for_method(&self, method: CrudMethod) -> EffectiveShape {
+        let ov = self.per_method.get(&method);
+        EffectiveShape {
+            identifier_field: ov
+                .and_then(|o| o.identifier_field.clone())
+                .unwrap_or_else(|| self.identifier_field.clone()),
+            identifier_pointer: ov
+                .and_then(|o| o.identifier_pointer)
+                .unwrap_or(self.identifier_pointer),
         }
     }
 }
@@ -141,14 +195,52 @@ fn akeyless_resource_shape_overrides() -> BTreeMap<String, ResourceShape> {
     // Class B-simple: alternate single-string identifier field uniform across CRUD.
     m.insert("esm".into(), ResourceShape::alt_field("EsmName"));
     m.insert("usc".into(), ResourceShape::alt_field("UscName"));
-    // Class B-complex: composite keys / mixed-per-CRUD identifiers /
-    // mixed-per-CRUD pointer-vs-value Name field types / singleton
-    // bodies / int64 identifiers — emit stub controllers pending M3.2
-    // graduation. Each entry below is annotated with WHY it's stubbed:
+
+    // Class B-graduated (M3.2): per-method overrides.
+    //
+    // certificate: GetCertificateValue.Name *string (only outlier);
+    // CreateCertificate / UpdateCertificateValue / DeleteItem all
+    // have Name string. Default pointer=false; Read overrides to true.
+    m.insert(
+        "certificate".into(),
+        ResourceShape::default().with_method_override(
+            CrudMethod::Read,
+            MethodOverride {
+                identifier_pointer: Some(true),
+                ..Default::default()
+            },
+        ),
+    );
+    // kmip_client: KmipCreateClient.Name string; KmipDescribeClient
+    // and KmipDeleteClient both Name *string. Default pointer=false;
+    // Read + Delete override to true.
+    m.insert(
+        "kmip_client".into(),
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Read,
+                MethodOverride {
+                    identifier_pointer: Some(true),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Delete,
+                MethodOverride {
+                    identifier_pointer: Some(true),
+                    ..Default::default()
+                },
+            ),
+    );
+
+    // Class B-stub: composite keys / mixed-int64-vs-string identifiers /
+    // singleton bodies / per-method-different-identifier-name —
+    // ResourceShape's per-method pointer override doesn't reach these.
+    // M3.2-future graduations land here as the substrate's expression
+    // surface widens (per-method identifier-field overrides, then
+    // composite-key support, then full SDK-body field mapping).
     m.insert("account_custom_field".into(), ResourceShape::stub()); // mixed: Id int64 on Get/Delete, Name string on Create
-    m.insert("certificate".into(), ResourceShape::stub()); // mixed: GetCertificateValue.Name *string vs DeleteItem.Name string
     m.insert("gateway_migration".into(), ResourceShape::stub()); // mixed: Name *string on Get, Id string on Delete
-    m.insert("kmip_client".into(), ResourceShape::stub()); // mixed: KmipCreateClient.Name string vs Describe/Delete *string
     m.insert("kmip_environment".into(), ResourceShape::stub()); // singleton bodies (Describe/Delete have no Name; Setup uses Hostname)
     m.insert("policy".into(), ResourceShape::stub()); // mixed: Path on Create/Update, Id on Get/Delete
     m.insert("role_auth_method_assoc".into(), ResourceShape::stub()); // composite (RoleName + AmName) → AssocId on Delete
@@ -254,14 +346,18 @@ pub fn build_controller_file(
     file
 }
 
-/// Build the body-construction prelude + composite. When the shape's
-/// identifier is `*string`, emits a `name := meta.GetExternalName(cr)`
-/// preamble + `&name` in the composite; otherwise inlines the call.
+/// Build the body-construction prelude + composite. When the
+/// effective shape's identifier is `*string`, emits a
+/// `name := meta.GetExternalName(cr)` preamble + `&name` in the
+/// composite; otherwise inlines the call. Identifier-field name comes
+/// from the effective (resolved) shape so per-method overrides apply.
 fn build_request_body(
     body_type: &str,
     shape: &ResourceShape,
+    method: CrudMethod,
 ) -> (Vec<GoStmt>, GoExpr) {
-    let id_value = if shape.identifier_pointer {
+    let eff = shape.for_method(method);
+    let id_value = if eff.identifier_pointer {
         GoExpr::AddressOf(Box::new(GoExpr::ident("name")))
     } else {
         GoExpr::call(
@@ -269,7 +365,7 @@ fn build_request_body(
             vec![GoExpr::ident("cr")],
         )
     };
-    let preamble = if shape.identifier_pointer {
+    let preamble = if eff.identifier_pointer {
         vec![GoStmt::ShortDecl {
             names: vec!["name".to_string()],
             values: vec![GoExpr::call(
@@ -283,7 +379,7 @@ fn build_request_body(
     let composite = GoExpr::Composite {
         ty: GoType::qualified("akeyless", body_type),
         fields: vec![
-            (Some(shape.identifier_field.clone()), id_value),
+            (Some(eff.identifier_field), id_value),
             (
                 Some("Token".to_string()),
                 GoExpr::AddressOf(Box::new(GoExpr::sel(
@@ -689,7 +785,7 @@ fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape)
     let read_body_type = sdk_naming::go_body_type_name(&resource.crud.read_schema);
 
     let mut body = type_assert_into_cr(kind, &observation_return_path());
-    let (preamble, composite) = build_request_body(&read_body_type, shape);
+    let (preamble, composite) = build_request_body(&read_body_type, shape, CrudMethod::Read);
     for s in preamble {
         body.push(s);
     }
@@ -793,7 +889,7 @@ fn build_create_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
     let create_body_type = sdk_naming::go_body_type_name(&resource.crud.create_schema);
 
     let mut body = type_assert_into_cr(kind, &creation_return_path());
-    let (preamble, composite) = build_request_body(&create_body_type, shape);
+    let (preamble, composite) = build_request_body(&create_body_type, shape, CrudMethod::Create);
     for s in preamble {
         body.push(s);
     }
@@ -917,7 +1013,7 @@ fn build_update_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
     let update_body_type = sdk_naming::go_body_type_name(update_schema);
 
     let mut body = type_assert_into_cr(kind, &update_return_path());
-    let (preamble, composite) = build_request_body(&update_body_type, shape);
+    let (preamble, composite) = build_request_body(&update_body_type, shape, CrudMethod::Update);
     for s in preamble {
         body.push(s);
     }
@@ -1011,7 +1107,7 @@ fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
         else_body: None,
     });
     body.push(GoStmt::Blank);
-    let (preamble, composite) = build_request_body(&delete_body_type, shape);
+    let (preamble, composite) = build_request_body(&delete_body_type, shape, CrudMethod::Delete);
     for s in preamble {
         body.push(s);
     }
