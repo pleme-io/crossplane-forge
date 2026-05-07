@@ -14,6 +14,9 @@ pub mod controller_gen;
 pub mod crd;
 /// Per-package deepcopy emitter (`zz_generated_deepcopy.go`).
 pub mod deepcopy_gen;
+/// Per-Kind `managed.Resource` interface methods emitter
+/// (`zz_generated_managed.go`).
+pub mod managed_methods_gen;
 /// Typed errors for CRD generation.
 pub mod error;
 /// Provider-runtime scaffold emitter (ProviderConfig types, main.go,
