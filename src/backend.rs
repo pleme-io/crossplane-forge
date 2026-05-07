@@ -7,7 +7,7 @@ use iac_forge::ir::{IacDataSource, IacProvider, IacResource};
 use iac_forge::naming::{strip_provider_prefix, to_kebab_case, to_pascal_case, to_snake_case};
 
 use crate::controller_gen::{self, ControllerConfig, package_name};
-use crate::{crd, deepcopy_gen, provider_gen, types_gen};
+use crate::{crd, deepcopy_gen, managed_methods_gen, provider_gen, types_gen};
 
 // ── Backend ──────────────────────────────────────────────────────────────
 
@@ -118,11 +118,16 @@ impl Backend for CrossplaneBackend {
         let deepcopy_go = deepcopy_gen::render_resource_deepcopy(resource, provider);
         let deepcopy_path = format!("apis/{pkg}/v1alpha1/zz_generated_deepcopy.go");
 
+        // zz_generated_managed.go — managed.Resource interface accessor methods
+        let managed_go = managed_methods_gen::render_resource_managed_methods(resource, provider);
+        let managed_path = format!("apis/{pkg}/v1alpha1/zz_generated_managed.go");
+
         Ok(vec![
             GeneratedArtifact::new(crd_path, crd_yaml, ArtifactKind::Resource),
             GeneratedArtifact::new(types_path, types_go, ArtifactKind::Resource),
             GeneratedArtifact::new(gvi_path, gvi_go, ArtifactKind::Module),
             GeneratedArtifact::new(deepcopy_path, deepcopy_go, ArtifactKind::Module),
+            GeneratedArtifact::new(managed_path, managed_go, ArtifactKind::Module),
             GeneratedArtifact::new(controller_path, controller_go, ArtifactKind::Controller),
         ])
     }
@@ -386,9 +391,9 @@ mod tests {
         let arts = backend
             .generate_resource(&resource, &provider)
             .expect("generate_resource");
-        // 5 artifacts per resource: legacy CRD + types.go + groupversion +
-        // deepcopy + controller
-        assert_eq!(arts.len(), 5, "expected 5 artifacts per resource");
+        // 6 artifacts per resource: legacy CRD + types.go + groupversion +
+        // deepcopy + managed-methods + controller
+        assert_eq!(arts.len(), 6, "expected 6 artifacts per resource");
         let paths: Vec<&str> = arts.iter().map(|a| a.path.as_str()).collect();
         assert!(paths.iter().any(|p| p.ends_with("-crd.yaml")));
         assert!(paths
@@ -429,6 +434,7 @@ mod tests {
                 ArtifactKind::Resource
             } else if a.path.ends_with("/groupversion_info.go")
                 || a.path.ends_with("/zz_generated_deepcopy.go")
+                || a.path.ends_with("/zz_generated_managed.go")
             {
                 ArtifactKind::Module
             } else if a.path.ends_with("/controller.go") {
