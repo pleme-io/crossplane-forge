@@ -212,6 +212,41 @@ impl ResourceShape {
             )
         })
     }
+
+    /// True when at least one method's body construction calls
+    /// `meta.GetExternalName(cr)`. False when every method uses
+    /// `BodyTemplate::NoIdentifier` or `BodyTemplate::SpecFields`
+    /// (neither references meta). Drives conditional `meta` import.
+    #[must_use]
+    pub fn needs_meta_import(&self) -> bool {
+        // Any method without an explicit body_template uses the default
+        // string-identifier path which calls meta.GetExternalName.
+        // Same for Int64FromExternalName.
+        for method in [CrudMethod::Read, CrudMethod::Create, CrudMethod::Update, CrudMethod::Delete] {
+            let eff = self.for_method(method);
+            match eff.body_template {
+                None | Some(BodyTemplate::Int64FromExternalName { .. }) => return true,
+                Some(BodyTemplate::NoIdentifier) | Some(BodyTemplate::SpecFields(_)) => continue,
+            }
+        }
+        false
+    }
+
+    /// True when this method's body construction references `cr`
+    /// (the type-asserted spec). Used by build_*_func to decide
+    /// between `cr, ok :=` (referenced) and `_, ok :=` (discarded).
+    #[must_use]
+    pub fn body_uses_cr(&self, method: CrudMethod) -> bool {
+        let eff = self.for_method(method);
+        match eff.body_template {
+            // NoIdentifier emits just `{Token: &e.token}` — no cr.
+            Some(BodyTemplate::NoIdentifier) => false,
+            // Everything else references cr (default path via
+            // meta.GetExternalName(cr); Int64 same; SpecFields via
+            // cr.Spec.ForProvider.X).
+            _ => true,
+        }
+    }
 }
 
 impl ControllerConfig {
@@ -504,6 +539,7 @@ pub fn build_controller_file(
         file.imports.push(GoImport::plain("strconv"));
     }
     file.imports.push(GoImport::plain("time"));
+    let _ = shape.needs_meta_import(); // referenced below in conditional import block
     // xpv1 (xpv1.Available) and meta (meta.GetExternalName) are only
     // referenced by non-stub Observe/Create/Update/Delete bodies.
     // Skip them when the controller is fully stubbed to avoid Go's
@@ -513,9 +549,11 @@ pub fn build_controller_file(
             "xpv1",
             "github.com/crossplane/crossplane-runtime/apis/common/v1",
         ));
-        file.imports.push(GoImport::plain(
-            "github.com/crossplane/crossplane-runtime/pkg/meta",
-        ));
+        if shape.needs_meta_import() {
+            file.imports.push(GoImport::plain(
+                "github.com/crossplane/crossplane-runtime/pkg/meta",
+            ));
+        }
     }
     file.imports.push(GoImport::plain(
         "github.com/crossplane/crossplane-runtime/pkg/logging",
@@ -1394,10 +1432,12 @@ fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
         addr_of: false,
     };
 
-    // Type assert: cr, ok := mg.(*v1alpha1.<Kind>)
+    // Type assert: `cr, ok :=` when the body uses cr; `_, ok :=` when
+    // it doesn't (NoIdentifier templates skip cr in the body).
+    let cr_name = if shape.body_uses_cr(CrudMethod::Delete) { "cr" } else { "_" };
     let mut body = GoBlock::new();
     body.push(GoStmt::ShortDecl {
-        names: vec!["cr".to_string(), "ok".to_string()],
+        names: vec![cr_name.to_string(), "ok".to_string()],
         values: vec![GoExpr::TypeAssert {
             x: Box::new(GoExpr::ident("mg")),
             ty: GoType::pointer(GoType::qualified("v1alpha1", kind)),
