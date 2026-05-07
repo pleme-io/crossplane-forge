@@ -1185,16 +1185,25 @@ mod tests {
             .generate_all(&provider, &resources, &data_sources)
             .expect("generate_all should succeed");
 
-        // 2 resource CRDs + 1 provider CRD = 3 (data sources are no-op, tests are no-op)
-        assert_eq!(artifacts.len(), 3);
+        // Per-resource: 1 legacy CRD YAML + 1 types.go + 1 groupversion_info.go + 1 controller.go = 4
+        // Provider: 1 PC CRD YAML + 1 PC types.go + 1 GVI.go + 1 main.go + 1 setup.go +
+        //           1 go.mod + 4 helm files = 10
+        // 2 resources × 4 = 8; total = 18
+        assert_eq!(artifacts.len(), 18);
         assert!(artifacts.iter().any(|a| a.path.contains("static-secret")));
         assert!(artifacts.iter().any(|a| a.path.contains("auth-method")));
         assert!(artifacts.iter().any(|a| a.path.contains("providerconfig")));
 
-        // Verify each CRD is valid YAML
+        // Validate every YAML artifact parses (the full set now includes Go,
+        // go.mod, and templated YAML — the latter contains Helm directives
+        // that aren't strict YAML scalars, so we check the structural ones only).
         for artifact in &artifacts {
-            let _: Value = serde_yaml_ng::from_str(&artifact.content)
-                .unwrap_or_else(|e| panic!("Invalid YAML in {}: {e}", artifact.path));
+            if artifact.path.ends_with("-crd.yaml") || artifact.path == "helm/Chart.yaml"
+                || artifact.path == "helm/values.yaml"
+            {
+                let _: Value = serde_yaml_ng::from_str(&artifact.content)
+                    .unwrap_or_else(|e| panic!("Invalid YAML in {}: {e}", artifact.path));
+            }
         }
     }
 
