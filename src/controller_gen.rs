@@ -1242,7 +1242,9 @@ mod tests {
             &ControllerConfig::akeyless_default(),
         );
         assert!(s.contains("func (_ *external) Disconnect(_ context.Context) error {"));
-        assert!(s.contains("// no long-lived resources"));
+        assert!(s.contains("holds no long-lived resources"));
+        // No-op: just `return nil`
+        assert!(s.contains("return nil"));
     }
 
     #[test]
