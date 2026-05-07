@@ -233,17 +233,59 @@ fn akeyless_resource_shape_overrides() -> BTreeMap<String, ResourceShape> {
             ),
     );
 
-    // Class B-stub: composite keys / mixed-int64-vs-string identifiers /
-    // singleton bodies / per-method-different-identifier-name —
-    // ResourceShape's per-method pointer override doesn't reach these.
-    // M3.2-future graduations land here as the substrate's expression
-    // surface widens (per-method identifier-field overrides, then
-    // composite-key support, then full SDK-body field mapping).
-    m.insert("account_custom_field".into(), ResourceShape::stub()); // mixed: Id int64 on Get/Delete, Name string on Create
-    m.insert("gateway_migration".into(), ResourceShape::stub()); // mixed: Name *string on Get, Id string on Delete
-    m.insert("kmip_environment".into(), ResourceShape::stub()); // singleton bodies (Describe/Delete have no Name; Setup uses Hostname)
-    m.insert("policy".into(), ResourceShape::stub()); // mixed: Path on Create/Update, Id on Get/Delete
-    m.insert("role_auth_method_assoc".into(), ResourceShape::stub()); // composite (RoleName + AmName) → AssocId on Delete
+    // gateway_migration: Name string default; Read+Update use Name *string,
+    // Delete uses Id string.
+    m.insert(
+        "gateway_migration".into(),
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Read,
+                MethodOverride {
+                    identifier_pointer: Some(true),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Update,
+                MethodOverride {
+                    identifier_pointer: Some(true),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Delete,
+                MethodOverride {
+                    identifier_field: Some("Id".to_string()),
+                    identifier_pointer: Some(false),
+                },
+            ),
+    );
+
+    // policy: 3-of-4 use Id string (Read, Update, Delete); Create uses
+    // Path string. Default to Id; Create overrides to Path.
+    m.insert(
+        "policy".into(),
+        ResourceShape {
+            identifier_field: "Id".to_string(),
+            ..ResourceShape::default()
+        }
+        .with_method_override(
+            CrudMethod::Create,
+            MethodOverride {
+                identifier_field: Some("Path".to_string()),
+                ..Default::default()
+            },
+        ),
+    );
+
+    // Remaining stubs — composite keys / mixed-int64-vs-string IDs /
+    // singleton bodies / per-method-different-identifier-name with
+    // shapes ResourceShape's expression surface doesn't yet reach.
+    // Slated for next M3.2 graduation slice (NoIdentifier mode +
+    // Int64 identifier + composite-key support).
+    m.insert("account_custom_field".into(), ResourceShape::stub()); // Id int64 on Get/Delete (need int64 support)
+    m.insert("kmip_environment".into(), ResourceShape::stub()); // Describe/Delete have no identifier (need NoIdentifier mode)
+    m.insert("role_auth_method_assoc".into(), ResourceShape::stub()); // composite (RoleName + AmName) on Create
     m.insert("role_rule".into(), ResourceShape::stub()); // composite (RoleName + Path) on Set/Delete
     m
 }
