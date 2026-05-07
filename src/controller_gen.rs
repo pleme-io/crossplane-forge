@@ -535,6 +535,9 @@ pub fn build_controller_file(
     // Imports — stdlib first (printer groups), then third-party with aliases.
     file.imports.push(GoImport::plain("context"));
     file.imports.push(GoImport::plain("errors"));
+    if !shape.stub {
+        file.imports.push(GoImport::plain("net/http"));
+    }
     if shape.needs_strconv_import() {
         file.imports.push(GoImport::plain("strconv"));
     }
@@ -1145,23 +1148,45 @@ fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape)
         names: vec!["body".to_string()],
         values: vec![composite],
     });
-    // _, _, err := e.client.V2API.<read_method>(ctx).<read_body_type>(body).Execute()
-    body.push(sdk_call_three_underscores(
-        &read_method,
-        &read_body_type,
-    ));
-    // if err != nil { ... return ExternalObservation{}, err }
+    // _, resp, err := e.client.V2API.<read_method>(ctx).<read_body_type>(body).Execute()
+    body.push(sdk_call_capture_resp(&read_method, &read_body_type));
+    // if err != nil {
+    //   if resp != nil && resp.StatusCode == http.StatusNotFound {
+    //     return managed.ExternalObservation{ResourceExists: false}, nil
+    //   }
+    //   return managed.ExternalObservation{}, err
+    // }
     body.push(GoStmt::If {
         init: None,
         cond: GoExpr::ident("err != nil"),
         body: {
             let mut b = GoBlock::new();
             b.push(GoStmt::Comment(
-                "TODO controller-iter-2: distinguish 404 (NotFound → ResourceExists=false)".to_string(),
+                "Observed an error. If the upstream API reports 404 the resource".to_string(),
             ));
             b.push(GoStmt::Comment(
-                "from real errors; today every read error short-circuits the reconcile.".to_string(),
+                "is absent and the reconciler should advance to Create.".to_string(),
             ));
+            b.push(GoStmt::If {
+                init: None,
+                cond: GoExpr::ident("resp != nil && resp.StatusCode == http.StatusNotFound"),
+                body: {
+                    let mut nb = GoBlock::new();
+                    nb.push(GoStmt::Return(vec![
+                        GoExpr::Composite {
+                            ty: GoType::qualified("managed", "ExternalObservation"),
+                            fields: vec![(
+                                Some("ResourceExists".to_string()),
+                                GoExpr::Lit(GoLit::Bool(false)),
+                            )],
+                            addr_of: false,
+                        },
+                        GoExpr::nil(),
+                    ]));
+                    nb
+                },
+                else_body: None,
+            });
             b.push(GoStmt::Return(vec![
                 GoExpr::Composite {
                     ty: GoType::qualified("managed", "ExternalObservation"),
@@ -1469,13 +1494,24 @@ fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
         names: vec!["body".to_string()],
         values: vec![composite],
     });
-    body.push(sdk_call_three_underscores(
-        &delete_method,
-        &delete_body_type,
-    ));
-    body.push(GoStmt::Comment(
-        "TODO controller-iter-2: swallow 404 so deletion is idempotent.".to_string(),
-    ));
+    body.push(sdk_call_capture_resp(&delete_method, &delete_body_type));
+    // Delete is idempotent: if the upstream API reports 404 the resource
+    // is already gone, which is the desired terminal state.
+    body.push(GoStmt::If {
+        init: None,
+        cond: GoExpr::ident(
+            "err != nil && resp != nil && resp.StatusCode == http.StatusNotFound",
+        ),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Return(vec![
+                zero_external_delete.clone(),
+                GoExpr::nil(),
+            ]));
+            b
+        },
+        else_body: None,
+    });
     body.push(GoStmt::Return(vec![
         zero_external_delete,
         GoExpr::ident("err"),
@@ -1795,9 +1831,9 @@ fn update_return_path() -> GoType {
     GoType::qualified("managed", "ExternalUpdate")
 }
 
-fn sdk_call_three_underscores(method: &str, body_type: &str) -> GoStmt {
-    // _, _, err := e.client.V2API.<method>(ctx).<body_type>(body).Execute()
-    let chain = GoExpr::call(
+fn sdk_call_chain(method: &str, body_type: &str) -> GoExpr {
+    // e.client.V2API.<method>(ctx).<body_type>(body).Execute()
+    GoExpr::call(
         GoExpr::sel(
             GoExpr::call(
                 GoExpr::sel(
@@ -1818,10 +1854,22 @@ fn sdk_call_three_underscores(method: &str, body_type: &str) -> GoStmt {
             "Execute",
         ),
         vec![],
-    );
+    )
+}
+
+fn sdk_call_three_underscores(method: &str, body_type: &str) -> GoStmt {
+    // _, _, err := e.client.V2API.<method>(ctx).<body_type>(body).Execute()
     GoStmt::ShortDecl {
         names: vec!["_".to_string(), "_".to_string(), "err".to_string()],
-        values: vec![chain],
+        values: vec![sdk_call_chain(method, body_type)],
+    }
+}
+
+fn sdk_call_capture_resp(method: &str, body_type: &str) -> GoStmt {
+    // _, resp, err := e.client.V2API.<method>(ctx).<body_type>(body).Execute()
+    GoStmt::ShortDecl {
+        names: vec!["_".to_string(), "resp".to_string(), "err".to_string()],
+        values: vec![sdk_call_chain(method, body_type)],
     }
 }
 
@@ -2109,12 +2157,39 @@ mod tests {
             s, GoStmt::ShortDecl { names, .. } if names == &["body".to_string()],
         ));
         assert!(body_decl.is_some());
-        // Should `_, _, err :=` short-decl the SDK chain.
+        // Should `_, resp, err :=` short-decl the SDK chain (resp captured for 404 mapping).
         let sdk_call = f.body.stmts.iter().find(|s| matches!(
             s, GoStmt::ShortDecl { names, .. }
-                if names == &["_".to_string(), "_".to_string(), "err".to_string()],
+                if names == &["_".to_string(), "resp".to_string(), "err".to_string()],
         ));
         assert!(sdk_call.is_some());
+        // The `if err != nil` block must contain a nested `if resp != nil && resp.StatusCode == http.StatusNotFound`
+        // returning ExternalObservation{ResourceExists: false}, nil.
+        let err_block = f.body.stmts.iter().find_map(|s| match s {
+            GoStmt::If { cond, body, .. }
+                if matches!(cond, GoExpr::Ident(s) if s == "err != nil") =>
+            {
+                Some(body)
+            }
+            _ => None,
+        }).expect("err != nil branch present");
+        let nested_if = err_block.stmts.iter().find_map(|s| match s {
+            GoStmt::If { cond, body, .. }
+                if matches!(cond, GoExpr::Ident(s) if s.contains("StatusNotFound")) =>
+            {
+                Some(body)
+            }
+            _ => None,
+        }).expect("nested 404 branch present");
+        let GoStmt::Return(rs) = nested_if.stmts.last().unwrap() else { panic!("expected return"); };
+        assert!(matches!(rs[1], GoExpr::Lit(GoLit::Nil)));
+        if let GoExpr::Composite { fields, .. } = &rs[0] {
+            assert!(fields.iter().any(|(name, val)| {
+                name.as_deref() == Some("ResourceExists") && matches!(val, GoExpr::Lit(GoLit::Bool(false)))
+            }), "404 branch must set ResourceExists: false");
+        } else {
+            panic!("expected composite return");
+        }
         // Last stmt is a Return with managed.ExternalObservation
         let GoStmt::Return(returns) = f.body.stmts.last().unwrap() else {
             panic!("expected return")
