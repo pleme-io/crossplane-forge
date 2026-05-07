@@ -1185,11 +1185,12 @@ mod tests {
             .generate_all(&provider, &resources, &data_sources)
             .expect("generate_all should succeed");
 
-        // Per-resource: 1 legacy CRD YAML + 1 types.go + 1 groupversion_info.go + 1 controller.go = 4
-        // Provider: 1 PC CRD YAML + 1 PC types.go + 1 GVI.go + 1 apis.go + 1 main.go +
-        //           1 setup.go + 1 go.mod + 4 helm files = 11
-        // 2 resources × 4 = 8; total = 19
-        assert_eq!(artifacts.len(), 19);
+        // Per-resource: 1 legacy CRD YAML + 1 types.go + 1 groupversion_info.go +
+        //               1 zz_deepcopy.go + 1 controller.go = 5
+        // Provider: 1 PC CRD YAML + 1 PC types.go + 1 GVI.go + 1 zz_deepcopy.go +
+        //           1 apis.go + 1 main.go + 1 setup.go + 1 go.mod + 4 helm files = 12
+        // 2 resources × 5 = 10; total = 22
+        assert_eq!(artifacts.len(), 22);
         assert!(artifacts.iter().any(|a| a.path.contains("static-secret")));
         assert!(artifacts.iter().any(|a| a.path.contains("auth-method")));
         assert!(artifacts.iter().any(|a| a.path.contains("providerconfig")));
