@@ -34,8 +34,26 @@ use crate::{crd, deepcopy_gen, managed_methods_gen, provider_gen, types_gen};
 /// emitted syntax anywhere — see the post-2026-05-06 substrate-hygiene
 /// reset notes in [`crate::types_gen`], [`crate::controller_gen`],
 /// [`crate::provider_gen`].
-#[derive(Debug, Clone, Copy, Default)]
-pub struct CrossplaneBackend;
+#[derive(Debug, Clone, Default)]
+pub struct CrossplaneBackend {
+    /// M6.4 — schema-driven body-field signature map. When `Some`,
+    /// the M6.2 broad walk in `controller_gen::build_request_body`
+    /// consults the SDK body schema for every scalar attribute it
+    /// would push, skipping any name+type mismatches automatically.
+    /// Set via `with_body_sigs()` from the iac-forge-cli generate
+    /// command after loading the OpenAPI spec.
+    pub body_sigs: crate::body_signatures::SharedBodySigMap,
+}
+
+impl CrossplaneBackend {
+    /// Builder: attach a body-signature map (typically built from the
+    /// OpenAPI spec via `BodySigMap::from_openapi_json_path`).
+    #[must_use]
+    pub fn with_body_sigs(mut self, sigs: crate::body_signatures::SharedBodySigMap) -> Self {
+        self.body_sigs = sigs;
+        self
+    }
+}
 
 impl fmt::Display for CrossplaneBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -81,7 +99,7 @@ impl Backend for CrossplaneBackend {
         resource: &IacResource,
         provider: &IacProvider,
     ) -> Result<Vec<GeneratedArtifact>, IacForgeError> {
-        let cfg = controller_config_for(provider);
+        let mut cfg = controller_config_for(provider); cfg.body_sigs = self.body_sigs.clone();
         let pkg = package_name(resource, provider);
         let stem = to_snake_case(&strip_provider_prefix(&resource.name, &provider.name));
 
@@ -147,7 +165,7 @@ impl Backend for CrossplaneBackend {
         resources: &[IacResource],
         _data_sources: &[IacDataSource],
     ) -> Result<Vec<GeneratedArtifact>, IacForgeError> {
-        let cfg = controller_config_for(provider);
+        let mut cfg = controller_config_for(provider); cfg.body_sigs = self.body_sigs.clone();
         let provider_pkg = provider.name.replace('-', "");
 
         // Legacy ProviderConfig CRD YAML
@@ -288,6 +306,7 @@ pub fn controller_config_for(provider: &IacProvider) -> ControllerConfig {
         api_group: group,
         api_version,
         resource_shapes,
+        body_sigs: None,
     }
 }
 
@@ -391,12 +410,12 @@ mod tests {
 
     #[test]
     fn platform_name() {
-        assert_eq!(CrossplaneBackend.platform(), "crossplane");
+        assert_eq!(CrossplaneBackend::default().platform(), "crossplane");
     }
 
     #[test]
     fn generate_resource_emits_full_artifact_set() {
-        let backend = CrossplaneBackend;
+        let backend = CrossplaneBackend::default();
         let provider = make_test_provider();
         let resource = make_test_resource();
         let arts = backend
@@ -420,7 +439,7 @@ mod tests {
 
     #[test]
     fn generate_resource_paths_use_resource_package_name() {
-        let backend = CrossplaneBackend;
+        let backend = CrossplaneBackend::default();
         let provider = make_test_provider();
         let resource = make_test_resource(); // akeyless_static_secret → "staticsecret"
         let arts = backend.generate_resource(&resource, &provider).unwrap();
@@ -435,7 +454,7 @@ mod tests {
 
     #[test]
     fn generate_resource_artifact_kinds_set_correctly() {
-        let backend = CrossplaneBackend;
+        let backend = CrossplaneBackend::default();
         let provider = make_test_provider();
         let resource = make_test_resource();
         let arts = backend.generate_resource(&resource, &provider).unwrap();
@@ -459,7 +478,7 @@ mod tests {
 
     #[test]
     fn generate_provider_emits_full_scaffold() {
-        let backend = CrossplaneBackend;
+        let backend = CrossplaneBackend::default();
         let provider = make_test_provider();
         let resources = vec![make_test_resource()];
         let arts = backend
@@ -488,7 +507,7 @@ mod tests {
 
     #[test]
     fn apis_aggregator_imports_provider_pkg_and_each_resource_pkg() {
-        let backend = CrossplaneBackend;
+        let backend = CrossplaneBackend::default();
         let provider = make_test_provider();
         let resources = vec![make_test_resource()]; // staticsecret
         let arts = backend
@@ -515,7 +534,7 @@ mod tests {
 
     #[test]
     fn generate_provider_artifact_kind_distribution() {
-        let backend = CrossplaneBackend;
+        let backend = CrossplaneBackend::default();
         let provider = make_test_provider();
         let resources = vec![make_test_resource()];
         let arts = backend
@@ -540,7 +559,7 @@ mod tests {
 
     #[test]
     fn data_source_is_no_op() {
-        let backend = CrossplaneBackend;
+        let backend = CrossplaneBackend::default();
         let provider = make_test_provider();
         let ds = IacDataSource {
             name: "test_ds".to_string(),

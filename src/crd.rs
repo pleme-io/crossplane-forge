@@ -1211,7 +1211,7 @@ mod tests {
         use iac_forge::backend::Backend;
         use iac_forge::ir::{AuthInfo, IacDataSource, IacProvider};
 
-        let backend = CrossplaneBackend;
+        let backend = CrossplaneBackend::default();
         let provider = IacProvider {
             name: "akeyless".to_string(),
             description: "Akeyless".to_string(),
