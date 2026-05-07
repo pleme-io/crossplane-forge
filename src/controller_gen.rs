@@ -14,6 +14,7 @@ use iac_forge::goast::{
     GoBlock, GoDecl, GoExpr, GoField, GoFile, GoFuncDecl, GoImport, GoLit, GoParam, GoRecv,
     GoStmt, GoStructTag, GoType, GoTypeBody, GoTypeDecl, JsonTag, print_file,
 };
+use crate::body_signatures::{FieldMatch, SharedBodySigMap};
 use iac_forge::ir::{IacProvider, IacResource, IacType};
 use iac_forge::naming::{strip_provider_prefix, to_pascal_case};
 use iac_forge::sdk_naming;
@@ -39,6 +40,19 @@ pub struct ControllerConfig {
     /// override the default `Name string` body-field assumption.
     /// Resources not present in this map use `ResourceShape::default()`.
     pub resource_shapes: BTreeMap<String, ResourceShape>,
+    /// M6.4 — schema-driven body-field signature lookup.
+    ///
+    /// When `Some`, the M6.2 broad walk in `build_request_body`
+    /// consults this map for every scalar attribute it would push
+    /// onto an SDK body composite. If the SDK body schema lacks the
+    /// field OR the openapi type/required-ness disagrees with the
+    /// IacAttribute, the push is silently skipped — restoring 100%
+    /// `go build` coverage across the corpus regardless of TOML/SDK
+    /// schema divergences.
+    ///
+    /// When `None`, the broad walk falls back to the per-resource
+    /// `push_for_provider_fields` opt-in flag (default off).
+    pub body_sigs: crate::body_signatures::SharedBodySigMap,
 }
 
 /// Per-resource shape configuration consumed by the controller
@@ -66,6 +80,22 @@ pub struct ResourceShape {
     /// singleton bodies that ResourceShape can't yet express. Stubs
     /// satisfy the ExternalClient interface but no-op every method.
     pub stub: bool,
+    /// M6.2 broad walk — when true, Create+Update bodies push every
+    /// non-computed non-identifier scalar attribute from
+    /// `cr.Spec.ForProvider.X` onto the SDK body composite.
+    ///
+    /// Default false because the akeyless TOML's IacType disagrees
+    /// with the akeyless-go SDK body's Go type for several common
+    /// fields (DeleteProtection bool/string, RotationHour int64/int32,
+    /// UseTls bool/string, TargetName/RotatorType missing on Update,
+    /// etc.) — naïve broad-walk produces compile errors on ~62% of
+    /// the 119-resource corpus. Resources opt in only after their
+    /// type alignment + `body_field_skips` are verified by `go build`.
+    ///
+    /// M6.4 (schema-driven filtering) will replace this opt-in flag
+    /// by reading the SDK body schema from the OpenAPI spec at emit
+    /// time and auto-skipping fields whose name+type don't match.
+    pub push_for_provider_fields: bool,
 }
 
 /// Which CRUD method an override applies to.
@@ -159,6 +189,7 @@ impl Default for ResourceShape {
             identifier_pointer: false,
             per_method: BTreeMap::new(),
             stub: false,
+            push_for_provider_fields: false,
         }
     }
 }
@@ -277,6 +308,7 @@ impl ControllerConfig {
             api_group: "akeyless.crossplane.io".to_string(),
             api_version: "v1alpha1".to_string(),
             resource_shapes: akeyless_resource_shape_overrides(),
+            body_sigs: None,
         }
     }
 
@@ -712,14 +744,30 @@ pub fn build_controller_file(
     file.decls.push(GoDecl::Func(build_connect_func(&kind)));
 
     // (e *external) Observe / Create / Update / Delete
-    file.decls
-        .push(GoDecl::Func(build_observe_func(resource, &kind, &shape)));
-    file.decls
-        .push(GoDecl::Func(build_create_func(resource, &kind, &shape)));
-    file.decls
-        .push(GoDecl::Func(build_update_func(resource, &kind, &shape)));
-    file.decls
-        .push(GoDecl::Func(build_delete_func(resource, &kind, &shape)));
+    file.decls.push(GoDecl::Func(build_observe_func(
+        resource,
+        &kind,
+        &shape,
+        &config.body_sigs,
+    )));
+    file.decls.push(GoDecl::Func(build_create_func(
+        resource,
+        &kind,
+        &shape,
+        &config.body_sigs,
+    )));
+    file.decls.push(GoDecl::Func(build_update_func(
+        resource,
+        &kind,
+        &shape,
+        &config.body_sigs,
+    )));
+    file.decls.push(GoDecl::Func(build_delete_func(
+        resource,
+        &kind,
+        &shape,
+        &config.body_sigs,
+    )));
     file.decls.push(GoDecl::Func(build_disconnect_func()));
 
     file
@@ -749,6 +797,7 @@ fn build_request_body(
     shape: &ResourceShape,
     method: CrudMethod,
     resource: &IacResource,
+    body_sigs: &SharedBodySigMap,
 ) -> (Vec<GoStmt>, GoExpr) {
     let eff = shape.for_method(method);
     if let Some(template) = eff.body_template.as_ref() {
@@ -783,14 +832,27 @@ fn build_request_body(
             ))),
         ),
     ];
-    if matches!(method, CrudMethod::Create | CrudMethod::Update) {
+    // M6.2 broad walk: push every non-computed non-identifier scalar
+    // attribute as `Pascal: cr.Spec.ForProvider.Pascal` onto the SDK
+    // body composite. Read+Delete bodies stay identifier-only because
+    // the SDK GET/DELETE schemas don't carry the Parameters fields.
+    //
+    // Gating order:
+    //   1. body_sigs is Some       → schema-driven walk (M6.4): walk
+    //                                 unconditionally + filter by SDK
+    //                                 body schema name+type match.
+    //   2. body_sigs is None +     → manual opt-in (M6.2): walk
+    //      shape.push_for_provider   without sig check; resource sets
+    //                                 the flag only when its TOML+SDK
+    //                                 align cleanly.
+    //   3. otherwise               → identifier+token only.
+    let want_walk = matches!(method, CrudMethod::Create | CrudMethod::Update)
+        && (body_sigs.is_some() || shape.push_for_provider_fields);
+    if want_walk {
         for attr in &resource.attributes {
             if attr.computed {
                 continue;
             }
-            // Skip the identifier itself + the `token` attribute — both
-            // already explicitly set above. (akeyless TOMLs don't put
-            // `token` in attributes today, but guarding is cheap.)
             if attr.canonical_name == "token" {
                 continue;
             }
@@ -798,19 +860,28 @@ fn build_request_body(
             if pascal == eff.identifier_field {
                 continue;
             }
-            // Per-resource per-method skip list — used when the TOML's
-            // IacType disagrees with the SDK body's Go type (slice 1
-            // workaround until schema-driven filtering lands as M6.4).
+            // Per-resource per-method skip list (legacy from M6.2's
+            // hardcoded-skip phase). Honored even under sig-driven
+            // mode for any pathological case.
             if eff.body_field_skips.iter().any(|s| s == &pascal) {
                 continue;
             }
-            // Scalar types only — types_gen collapses List/Map/Object to
-            // opaque string today (slice 1). When types_gen graduates
-            // structural collections (slice 2), this filter relaxes.
+            // Scalar types only — types_gen collapses List/Map/Object
+            // to opaque `string`. Slice 2 of types_gen relaxes this.
             if !matches!(
                 attr.iac_type,
                 IacType::String | IacType::Integer | IacType::Float | IacType::Numeric | IacType::Boolean
             ) {
+                continue;
+            }
+            // M6.4 — schema-driven filter: skip when the SDK body
+            // schema lacks this field OR its name+type/required-ness
+            // disagrees with the IacAttribute. Restores 100% coverage
+            // across the corpus regardless of TOML/SDK divergences.
+            if let Some(sigs) = body_sigs.as_ref()
+                && sigs.check_field(body_type, &pascal, &attr.iac_type, attr.required)
+                    == FieldMatch::Skip
+            {
                 continue;
             }
             fields.push((
@@ -1517,7 +1588,7 @@ fn build_connect_func(kind: &str) -> GoFuncDecl {
 
 fn creds_unused() {} // silence — `creds` is referenced in the return; the var doesn't go unused
 
-fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape) -> GoFuncDecl {
+fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape, body_sigs: &SharedBodySigMap) -> GoFuncDecl {
     if shape.stub {
         return build_stub_observe(kind);
     }
@@ -1525,7 +1596,7 @@ fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape)
     let read_body_type = sdk_naming::go_body_type_name(&resource.crud.read_schema);
 
     let mut body = type_assert_into_cr(kind, &observation_return_path());
-    let (preamble, composite) = build_request_body(&read_body_type, shape, CrudMethod::Read, resource);
+    let (preamble, composite) = build_request_body(&read_body_type, shape, CrudMethod::Read, resource, body_sigs);
     for s in preamble {
         body.push(s);
     }
@@ -1643,7 +1714,7 @@ fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape)
     }
 }
 
-fn build_create_func(resource: &IacResource, kind: &str, shape: &ResourceShape) -> GoFuncDecl {
+fn build_create_func(resource: &IacResource, kind: &str, shape: &ResourceShape, body_sigs: &SharedBodySigMap) -> GoFuncDecl {
     if shape.stub {
         return build_stub_create(kind);
     }
@@ -1651,7 +1722,7 @@ fn build_create_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
     let create_body_type = sdk_naming::go_body_type_name(&resource.crud.create_schema);
 
     let mut body = type_assert_into_cr(kind, &creation_return_path());
-    let (preamble, composite) = build_request_body(&create_body_type, shape, CrudMethod::Create, resource);
+    let (preamble, composite) = build_request_body(&create_body_type, shape, CrudMethod::Create, resource, body_sigs);
     for s in preamble {
         body.push(s);
     }
@@ -1700,7 +1771,7 @@ fn build_create_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
     }
 }
 
-fn build_update_func(resource: &IacResource, kind: &str, shape: &ResourceShape) -> GoFuncDecl {
+fn build_update_func(resource: &IacResource, kind: &str, shape: &ResourceShape, body_sigs: &SharedBodySigMap) -> GoFuncDecl {
     if shape.stub {
         return build_stub_update(kind);
     }
@@ -1775,7 +1846,7 @@ fn build_update_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
     let update_body_type = sdk_naming::go_body_type_name(update_schema);
 
     let mut body = type_assert_into_cr(kind, &update_return_path());
-    let (preamble, composite) = build_request_body(&update_body_type, shape, CrudMethod::Update, resource);
+    let (preamble, composite) = build_request_body(&update_body_type, shape, CrudMethod::Update, resource, body_sigs);
     for s in preamble {
         body.push(s);
     }
@@ -1826,7 +1897,7 @@ fn build_update_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
     }
 }
 
-fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape) -> GoFuncDecl {
+fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape, body_sigs: &SharedBodySigMap) -> GoFuncDecl {
     if shape.stub {
         return build_stub_delete(kind);
     }
@@ -1871,7 +1942,7 @@ fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape) 
         else_body: None,
     });
     body.push(GoStmt::Blank);
-    let (preamble, composite) = build_request_body(&delete_body_type, shape, CrudMethod::Delete, resource);
+    let (preamble, composite) = build_request_body(&delete_body_type, shape, CrudMethod::Delete, resource, body_sigs);
     for s in preamble {
         body.push(s);
     }
@@ -2415,7 +2486,7 @@ mod tests {
 
     #[test]
     fn observe_calls_correct_sdk_method() {
-        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
+        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default(), &None);
         let rendered = print_file(&{
             let mut file = GoFile::new("p");
             file.decls.push(GoDecl::Func(f));
@@ -2429,7 +2500,7 @@ mod tests {
 
     #[test]
     fn create_calls_correct_sdk_method() {
-        let f = build_create_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
+        let f = build_create_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default(), &None);
         let mut file = GoFile::new("p");
         file.decls.push(GoDecl::Func(f));
         let rendered = print_file(&file);
@@ -2440,7 +2511,7 @@ mod tests {
 
     #[test]
     fn update_no_op_branch_for_resources_without_update_schema() {
-        let f = build_update_func(&role_no_update(), "Role", &ResourceShape::default());
+        let f = build_update_func(&role_no_update(), "Role", &ResourceShape::default(), &None);
         // Rendering: should NOT contain V2API call
         let mut file = GoFile::new("p");
         file.decls.push(GoDecl::Func(f));
@@ -2451,7 +2522,7 @@ mod tests {
 
     #[test]
     fn delete_calls_correct_sdk_method() {
-        let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
+        let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default(), &None);
         let mut file = GoFile::new("p");
         file.decls.push(GoDecl::Func(f));
         let rendered = print_file(&file);
@@ -2531,7 +2602,7 @@ mod tests {
 
     #[test]
     fn observe_body_shape() {
-        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
+        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default(), &None);
         // First two stmts: type-assert short decl, then the !ok if branch.
         assert!(matches!(
             f.body.stmts[0],
@@ -2593,7 +2664,7 @@ mod tests {
 
     #[test]
     fn observe_signature_correct() {
-        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
+        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default(), &None);
         assert_eq!(f.name, "Observe");
         let recv = f.recv.as_ref().unwrap();
         assert_eq!(recv.name, "e");
@@ -2615,7 +2686,7 @@ mod tests {
 
     #[test]
     fn create_signature_returns_external_creation() {
-        let f = build_create_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
+        let f = build_create_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default(), &None);
         assert_eq!(f.name, "Create");
         assert!(matches!(
             f.returns[0],
@@ -2626,7 +2697,7 @@ mod tests {
 
     #[test]
     fn delete_returns_external_delete_and_error_v1_18() {
-        let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
+        let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default(), &None);
         assert_eq!(f.returns.len(), 2);
         assert!(matches!(
             f.returns[0],
@@ -2814,7 +2885,11 @@ mod tests {
                 update_only: false,
             },
         ];
-        let f = build_create_func(&r, "AuthMethodApiKey", &ResourceShape::default());
+        // Test M6.2 broad walk via the manual opt-in path (push_for_provider_fields=true)
+        // — the M6.4 schema-driven path is exercised in body_signatures::tests.
+        let mut shape = ResourceShape::default();
+        shape.push_for_provider_fields = true;
+        let f = build_create_func(&r, "AuthMethodApiKey", &shape, &None);
         // Find the body short-decl
         let body_decl = f.body.stmts.iter().find_map(|s| match s {
             GoStmt::ShortDecl { names, values } if names == &["body".to_string()] => Some(values),
@@ -2879,7 +2954,7 @@ mod tests {
                 update_only: false,
             },
         ];
-        let f = build_observe_func(&r, "AuthMethodApiKey", &ResourceShape::default());
+        let f = build_observe_func(&r, "AuthMethodApiKey", &ResourceShape::default(), &None);
         let body_decl = f.body.stmts.iter().find_map(|s| match s {
             GoStmt::ShortDecl { names, values } if names == &["body".to_string()] => Some(values),
             _ => None,

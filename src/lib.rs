@@ -8,6 +8,10 @@
 
 /// Backend trait implementation and naming convention.
 pub mod backend;
+/// Schema-driven body-field signatures pulled from the OpenAPI spec.
+/// Drives M6.4 — `build_request_body` consults this to skip pushes
+/// where the IacAttribute disagrees with the SDK body's field shape.
+pub mod body_signatures;
 /// Crossplane controller Go-code emitter (per-resource ExternalClient impl).
 pub mod controller_gen;
 /// CRD YAML generation helpers.
