@@ -8,6 +8,8 @@
 //! constructed as a typed [`GoFile`] tree, never as `format!()`
 //! strings of Go syntax.
 
+use std::collections::BTreeMap;
+
 use iac_forge::goast::{
     GoBlock, GoDecl, GoExpr, GoField, GoFile, GoFuncDecl, GoImport, GoLit, GoParam, GoRecv,
     GoStmt, GoType, GoTypeBody, GoTypeDecl, print_file,
@@ -31,6 +33,78 @@ pub struct ControllerConfig {
     pub api_group: String,
     /// API version for the emitted CRDs (e.g., `v1alpha1`).
     pub api_version: String,
+    /// Per-resource shape overrides — keyed by the bare resource name
+    /// (after `strip_provider_prefix`, before snake_case): e.g.
+    /// `"esm"`, `"role_rule"`. Used by the controller emitter to
+    /// override the default `Name string` body-field assumption.
+    /// Resources not present in this map use `ResourceShape::default()`.
+    pub resource_shapes: BTreeMap<String, ResourceShape>,
+}
+
+/// Per-resource shape configuration consumed by the controller
+/// emitter. Captures the heterogeneity across SDK body types — some
+/// use `Name string`, some `Name *string`, some a different field
+/// entirely (e.g. `EsmName`, `UscName`, `Path`), and some use
+/// composite keys / mixed-per-CRUD identifiers that don't fit the
+/// single-identifier pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ResourceShape {
+    /// Body-field name carrying the resource identifier
+    /// (defaults to `"Name"`).
+    pub identifier_field: String,
+    /// Whether the identifier field is `*string` instead of `string`
+    /// (openapi-generator emits optional fields as pointers).
+    pub identifier_pointer: bool,
+    /// Emit a stub controller (no SDK calls) for resources whose body
+    /// shape requires composite keys, mixed-per-CRUD identifiers, or
+    /// other non-uniform shapes M3.2 graduates. Stub controllers
+    /// satisfy the ExternalClient interface but no-op every method.
+    pub stub: bool,
+}
+
+impl Default for ResourceShape {
+    fn default() -> Self {
+        Self {
+            identifier_field: "Name".to_string(),
+            identifier_pointer: false,
+            stub: false,
+        }
+    }
+}
+
+impl ResourceShape {
+    /// Body-field with `*string` identifier (e.g. `Name *string`).
+    #[must_use]
+    pub fn name_pointer() -> Self {
+        Self {
+            identifier_field: "Name".to_string(),
+            identifier_pointer: true,
+            stub: false,
+        }
+    }
+
+    /// Body-field with a non-`Name` `string` identifier
+    /// (e.g. `EsmName`, `UscName`, `Path`, `Hostname`).
+    #[must_use]
+    pub fn alt_field(field: impl Into<String>) -> Self {
+        Self {
+            identifier_field: field.into(),
+            identifier_pointer: false,
+            stub: false,
+        }
+    }
+
+    /// Stub controller — body shape doesn't fit the single-identifier
+    /// pattern; M3.2 graduation needed.
+    #[must_use]
+    pub fn stub() -> Self {
+        Self {
+            identifier_field: String::new(),
+            identifier_pointer: false,
+            stub: true,
+        }
+    }
 }
 
 impl ControllerConfig {
@@ -41,8 +115,45 @@ impl ControllerConfig {
             provider_module: "github.com/pleme-io/crossplane-akeyless".to_string(),
             api_group: "akeyless.crossplane.io".to_string(),
             api_version: "v1alpha1".to_string(),
+            resource_shapes: akeyless_resource_shape_overrides(),
         }
     }
+
+    /// Look up the shape for a resource, falling back to the default
+    /// (`Name string`) when no override is registered.
+    #[must_use]
+    pub fn shape_for(&self, resource: &IacResource, provider: &IacProvider) -> ResourceShape {
+        let key: &str = strip_provider_prefix(&resource.name, &provider.name);
+        self.resource_shapes
+            .get(key)
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+/// Hardcoded shape overrides for the akeyless TOML corpus, derived from
+/// inspecting the actual `pleme-io/akeyless-go` SDK body types
+/// (`api_v2.go` + `model_*.go`). Future iteration can replace the
+/// hardcoded mapping with OpenAPI-introspection at generation time.
+#[must_use]
+fn akeyless_resource_shape_overrides() -> BTreeMap<String, ResourceShape> {
+    let mut m = BTreeMap::new();
+    // Class A: identifier is `*string` not `string`.
+    m.insert("certificate".into(), ResourceShape::name_pointer());
+    m.insert("kmip_client".into(), ResourceShape::name_pointer());
+    // Class B-simple: alternate single-string identifier field.
+    m.insert("esm".into(), ResourceShape::alt_field("EsmName"));
+    m.insert("usc".into(), ResourceShape::alt_field("UscName"));
+    // Class B-complex: composite keys / mixed-per-CRUD identifiers /
+    // singleton bodies / int64 identifiers — emit stub controllers
+    // pending M3.2 graduation.
+    m.insert("account_custom_field".into(), ResourceShape::stub());
+    m.insert("gateway_migration".into(), ResourceShape::stub());
+    m.insert("kmip_environment".into(), ResourceShape::stub());
+    m.insert("policy".into(), ResourceShape::stub());
+    m.insert("role_auth_method_assoc".into(), ResourceShape::stub());
+    m.insert("role_rule".into(), ResourceShape::stub());
+    m
 }
 
 /// Render the per-resource controller .go file.
@@ -65,6 +176,7 @@ pub fn build_controller_file(
 ) -> GoFile {
     let kind = cr_kind(resource, provider);
     let pkg = package_name(resource, provider);
+    let shape = config.shape_for(resource, provider);
 
     let mut file = GoFile::new(&pkg);
 
@@ -124,16 +236,59 @@ pub fn build_controller_file(
 
     // (e *external) Observe / Create / Update / Delete
     file.decls
-        .push(GoDecl::Func(build_observe_func(resource, &kind)));
+        .push(GoDecl::Func(build_observe_func(resource, &kind, &shape)));
     file.decls
-        .push(GoDecl::Func(build_create_func(resource, &kind)));
+        .push(GoDecl::Func(build_create_func(resource, &kind, &shape)));
     file.decls
-        .push(GoDecl::Func(build_update_func(resource, &kind)));
+        .push(GoDecl::Func(build_update_func(resource, &kind, &shape)));
     file.decls
-        .push(GoDecl::Func(build_delete_func(resource, &kind)));
+        .push(GoDecl::Func(build_delete_func(resource, &kind, &shape)));
     file.decls.push(GoDecl::Func(build_disconnect_func()));
 
     file
+}
+
+/// Build the body-construction prelude + composite. When the shape's
+/// identifier is `*string`, emits a `name := meta.GetExternalName(cr)`
+/// preamble + `&name` in the composite; otherwise inlines the call.
+fn build_request_body(
+    body_type: &str,
+    shape: &ResourceShape,
+) -> (Vec<GoStmt>, GoExpr) {
+    let id_value = if shape.identifier_pointer {
+        GoExpr::AddressOf(Box::new(GoExpr::ident("name")))
+    } else {
+        GoExpr::call(
+            GoExpr::path(&["meta", "GetExternalName"]),
+            vec![GoExpr::ident("cr")],
+        )
+    };
+    let preamble = if shape.identifier_pointer {
+        vec![GoStmt::ShortDecl {
+            names: vec!["name".to_string()],
+            values: vec![GoExpr::call(
+                GoExpr::path(&["meta", "GetExternalName"]),
+                vec![GoExpr::ident("cr")],
+            )],
+        }]
+    } else {
+        vec![]
+    };
+    let composite = GoExpr::Composite {
+        ty: GoType::qualified("akeyless", body_type),
+        fields: vec![
+            (Some(shape.identifier_field.clone()), id_value),
+            (
+                Some("Token".to_string()),
+                GoExpr::AddressOf(Box::new(GoExpr::sel(
+                    GoExpr::ident("e"),
+                    "token",
+                ))),
+            ),
+        ],
+        addr_of: false,
+    };
+    (preamble, composite)
 }
 
 fn build_disconnect_func() -> GoFuncDecl {
@@ -520,34 +675,21 @@ fn build_connect_func(kind: &str) -> GoFuncDecl {
 
 fn creds_unused() {} // silence — `creds` is referenced in the return; the var doesn't go unused
 
-fn build_observe_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
+fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape) -> GoFuncDecl {
+    if shape.stub {
+        return build_stub_observe(kind);
+    }
     let read_method = sdk_naming::go_method_name(&resource.crud.read_schema);
     let read_body_type = sdk_naming::go_body_type_name(&resource.crud.read_schema);
 
     let mut body = type_assert_into_cr(kind, &observation_return_path());
-    // body := akeyless.<read_body_type>{Name: meta.GetExternalName(cr), Token: &e.token}
+    let (preamble, composite) = build_request_body(&read_body_type, shape);
+    for s in preamble {
+        body.push(s);
+    }
     body.push(GoStmt::ShortDecl {
         names: vec!["body".to_string()],
-        values: vec![GoExpr::Composite {
-            ty: GoType::qualified("akeyless", &read_body_type),
-            fields: vec![
-                (
-                    Some("Name".to_string()),
-                    GoExpr::call(
-                        GoExpr::path(&["meta", "GetExternalName"]),
-                        vec![GoExpr::ident("cr")],
-                    ),
-                ),
-                (
-                    Some("Token".to_string()),
-                    GoExpr::AddressOf(Box::new(GoExpr::sel(
-                        GoExpr::ident("e"),
-                        "token",
-                    ))),
-                ),
-            ],
-            addr_of: false,
-        }],
+        values: vec![composite],
     });
     // _, _, err := e.client.V2API.<read_method>(ctx).<read_body_type>(body).Execute()
     body.push(sdk_call_three_underscores(
@@ -637,33 +779,21 @@ fn build_observe_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
     }
 }
 
-fn build_create_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
+fn build_create_func(resource: &IacResource, kind: &str, shape: &ResourceShape) -> GoFuncDecl {
+    if shape.stub {
+        return build_stub_create(kind);
+    }
     let create_method = sdk_naming::go_method_name(&resource.crud.create_schema);
     let create_body_type = sdk_naming::go_body_type_name(&resource.crud.create_schema);
 
     let mut body = type_assert_into_cr(kind, &creation_return_path());
+    let (preamble, composite) = build_request_body(&create_body_type, shape);
+    for s in preamble {
+        body.push(s);
+    }
     body.push(GoStmt::ShortDecl {
         names: vec!["body".to_string()],
-        values: vec![GoExpr::Composite {
-            ty: GoType::qualified("akeyless", &create_body_type),
-            fields: vec![
-                (
-                    Some("Name".to_string()),
-                    GoExpr::call(
-                        GoExpr::path(&["meta", "GetExternalName"]),
-                        vec![GoExpr::ident("cr")],
-                    ),
-                ),
-                (
-                    Some("Token".to_string()),
-                    GoExpr::AddressOf(Box::new(GoExpr::sel(
-                        GoExpr::ident("e"),
-                        "token",
-                    ))),
-                ),
-            ],
-            addr_of: false,
-        }],
+        values: vec![composite],
     });
     body.push(GoStmt::Comment(
         "TODO controller-iter-2: map cr.Spec.ForProvider fields → body fields".to_string(),
@@ -706,7 +836,10 @@ fn build_create_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
     }
 }
 
-fn build_update_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
+fn build_update_func(resource: &IacResource, kind: &str, shape: &ResourceShape) -> GoFuncDecl {
+    if shape.stub {
+        return build_stub_update(kind);
+    }
     let Some(update_schema) = resource.crud.update_schema.as_deref() else {
         // No-op for resources without an update endpoint
         let mut body = GoBlock::new();
@@ -778,28 +911,13 @@ fn build_update_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
     let update_body_type = sdk_naming::go_body_type_name(update_schema);
 
     let mut body = type_assert_into_cr(kind, &update_return_path());
+    let (preamble, composite) = build_request_body(&update_body_type, shape);
+    for s in preamble {
+        body.push(s);
+    }
     body.push(GoStmt::ShortDecl {
         names: vec!["body".to_string()],
-        values: vec![GoExpr::Composite {
-            ty: GoType::qualified("akeyless", &update_body_type),
-            fields: vec![
-                (
-                    Some("Name".to_string()),
-                    GoExpr::call(
-                        GoExpr::path(&["meta", "GetExternalName"]),
-                        vec![GoExpr::ident("cr")],
-                    ),
-                ),
-                (
-                    Some("Token".to_string()),
-                    GoExpr::AddressOf(Box::new(GoExpr::sel(
-                        GoExpr::ident("e"),
-                        "token",
-                    ))),
-                ),
-            ],
-            addr_of: false,
-        }],
+        values: vec![composite],
     });
     body.push(GoStmt::Comment(
         "TODO controller-iter-2: map mutable cr.Spec.ForProvider fields → body fields".to_string(),
@@ -844,7 +962,10 @@ fn build_update_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
     }
 }
 
-fn build_delete_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
+fn build_delete_func(resource: &IacResource, kind: &str, shape: &ResourceShape) -> GoFuncDecl {
+    if shape.stub {
+        return build_stub_delete(kind);
+    }
     let delete_method = sdk_naming::go_method_name(&resource.crud.delete_schema);
     let delete_body_type = sdk_naming::go_body_type_name(&resource.crud.delete_schema);
 
@@ -884,28 +1005,13 @@ fn build_delete_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
         else_body: None,
     });
     body.push(GoStmt::Blank);
+    let (preamble, composite) = build_request_body(&delete_body_type, shape);
+    for s in preamble {
+        body.push(s);
+    }
     body.push(GoStmt::ShortDecl {
         names: vec!["body".to_string()],
-        values: vec![GoExpr::Composite {
-            ty: GoType::qualified("akeyless", &delete_body_type),
-            fields: vec![
-                (
-                    Some("Name".to_string()),
-                    GoExpr::call(
-                        GoExpr::path(&["meta", "GetExternalName"]),
-                        vec![GoExpr::ident("cr")],
-                    ),
-                ),
-                (
-                    Some("Token".to_string()),
-                    GoExpr::AddressOf(Box::new(GoExpr::sel(
-                        GoExpr::ident("e"),
-                        "token",
-                    ))),
-                ),
-            ],
-            addr_of: false,
-        }],
+        values: vec![composite],
     });
     body.push(sdk_call_three_underscores(
         &delete_method,
@@ -925,6 +1031,204 @@ fn build_delete_func(resource: &IacResource, kind: &str) -> GoFuncDecl {
             "Delete removes the upstream resource. Idempotent on NotFound.\nSignature follows crossplane-runtime v1.18+: returns (ExternalDelete, error)."
                 .to_string(),
         ),
+        recv: Some(GoRecv {
+            name: "e".to_string(),
+            ty: GoType::pointer(GoType::named("external")),
+        }),
+        params: vec![
+            GoParam {
+                name: "ctx".to_string(),
+                ty: GoType::qualified("context", "Context"),
+            },
+            GoParam {
+                name: "mg".to_string(),
+                ty: GoType::qualified("resource", "Managed"),
+            },
+        ],
+        returns: vec![
+            GoType::qualified("managed", "ExternalDelete"),
+            GoType::named("error"),
+        ],
+        body,
+    }
+}
+
+// ── Stub controllers (composite-key / mixed-identifier resources) ────────
+//
+// Resources whose SDK body shape requires composite keys
+// (RoleName+Path, RoleName+AmName), mixed-per-CRUD-op identifiers
+// (Name on Create vs Id on Get/Delete), or singleton bodies with no
+// identifier field, get a stub controller that satisfies the
+// ExternalClient interface but no-ops every reconcile call. M3.2
+// graduates each one as the body-mapping work lands.
+
+fn build_stub_observe(kind: &str) -> GoFuncDecl {
+    let mut body = type_assert_into_cr(kind, &observation_return_path());
+    body.push(GoStmt::Comment(
+        "Stub: body-mapping pending M3.2 graduation — returns ResourceExists=false".to_string(),
+    ));
+    body.push(GoStmt::Comment(
+        "so the reconciler stays idle for resources with composite-key shapes.".to_string(),
+    ));
+    body.push(GoStmt::Return(vec![
+        GoExpr::Composite {
+            ty: GoType::qualified("managed", "ExternalObservation"),
+            fields: vec![],
+            addr_of: false,
+        },
+        GoExpr::nil(),
+    ]));
+    GoFuncDecl {
+        name: "Observe".to_string(),
+        doc: Some(
+            "Observe — STUB. Body-mapping pending M3.2 graduation for resources whose\nSDK body shape requires composite keys / mixed-per-CRUD identifiers.\nReturns an empty ExternalObservation so the reconciler stays idle."
+                .to_string(),
+        ),
+        recv: Some(GoRecv {
+            name: "e".to_string(),
+            ty: GoType::pointer(GoType::named("external")),
+        }),
+        params: vec![
+            GoParam {
+                name: "ctx".to_string(),
+                ty: GoType::qualified("context", "Context"),
+            },
+            GoParam {
+                name: "mg".to_string(),
+                ty: GoType::qualified("resource", "Managed"),
+            },
+        ],
+        returns: vec![
+            GoType::qualified("managed", "ExternalObservation"),
+            GoType::named("error"),
+        ],
+        body,
+    }
+}
+
+fn build_stub_create(kind: &str) -> GoFuncDecl {
+    let mut body = type_assert_into_cr(kind, &creation_return_path());
+    body.push(GoStmt::Comment(
+        "Stub: body-mapping pending M3.2 graduation.".to_string(),
+    ));
+    body.push(GoStmt::Return(vec![
+        GoExpr::Composite {
+            ty: GoType::qualified("managed", "ExternalCreation"),
+            fields: vec![],
+            addr_of: false,
+        },
+        GoExpr::nil(),
+    ]));
+    GoFuncDecl {
+        name: "Create".to_string(),
+        doc: Some("Create — STUB. Body-mapping pending M3.2 graduation.".to_string()),
+        recv: Some(GoRecv {
+            name: "e".to_string(),
+            ty: GoType::pointer(GoType::named("external")),
+        }),
+        params: vec![
+            GoParam {
+                name: "ctx".to_string(),
+                ty: GoType::qualified("context", "Context"),
+            },
+            GoParam {
+                name: "mg".to_string(),
+                ty: GoType::qualified("resource", "Managed"),
+            },
+        ],
+        returns: vec![
+            GoType::qualified("managed", "ExternalCreation"),
+            GoType::named("error"),
+        ],
+        body,
+    }
+}
+
+fn build_stub_update(kind: &str) -> GoFuncDecl {
+    let mut body = type_assert_into_cr(kind, &update_return_path());
+    body.push(GoStmt::Comment(
+        "Stub: body-mapping pending M3.2 graduation.".to_string(),
+    ));
+    body.push(GoStmt::Return(vec![
+        GoExpr::Composite {
+            ty: GoType::qualified("managed", "ExternalUpdate"),
+            fields: vec![],
+            addr_of: false,
+        },
+        GoExpr::nil(),
+    ]));
+    GoFuncDecl {
+        name: "Update".to_string(),
+        doc: Some("Update — STUB. Body-mapping pending M3.2 graduation.".to_string()),
+        recv: Some(GoRecv {
+            name: "e".to_string(),
+            ty: GoType::pointer(GoType::named("external")),
+        }),
+        params: vec![
+            GoParam {
+                name: "ctx".to_string(),
+                ty: GoType::qualified("context", "Context"),
+            },
+            GoParam {
+                name: "mg".to_string(),
+                ty: GoType::qualified("resource", "Managed"),
+            },
+        ],
+        returns: vec![
+            GoType::qualified("managed", "ExternalUpdate"),
+            GoType::named("error"),
+        ],
+        body,
+    }
+}
+
+fn build_stub_delete(kind: &str) -> GoFuncDecl {
+    // Mirror the type-assert + If !ok prelude from build_delete_func so
+    // the stub's signature matches non-stub Delete (returns
+    // managed.ExternalDelete + error per v1.18).
+    let mut body = GoBlock::new();
+    body.push(GoStmt::ShortDecl {
+        names: vec!["_".to_string(), "ok".to_string()],
+        values: vec![GoExpr::TypeAssert {
+            x: Box::new(GoExpr::ident("mg")),
+            ty: GoType::pointer(GoType::qualified("v1alpha1", kind)),
+            with_ok: true,
+        }],
+    });
+    body.push(GoStmt::If {
+        init: None,
+        cond: GoExpr::ident("!ok"),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Return(vec![
+                GoExpr::Composite {
+                    ty: GoType::qualified("managed", "ExternalDelete"),
+                    fields: vec![],
+                    addr_of: false,
+                },
+                GoExpr::call(
+                    GoExpr::path(&["errors", "New"]),
+                    vec![GoExpr::str(&format!("expected *v1alpha1.{kind}"))],
+                ),
+            ]));
+            b
+        },
+        else_body: None,
+    });
+    body.push(GoStmt::Comment(
+        "Stub: body-mapping pending M3.2 graduation.".to_string(),
+    ));
+    body.push(GoStmt::Return(vec![
+        GoExpr::Composite {
+            ty: GoType::qualified("managed", "ExternalDelete"),
+            fields: vec![],
+            addr_of: false,
+        },
+        GoExpr::nil(),
+    ]));
+    GoFuncDecl {
+        name: "Delete".to_string(),
+        doc: Some("Delete — STUB. Body-mapping pending M3.2 graduation.".to_string()),
         recv: Some(GoRecv {
             name: "e".to_string(),
             ty: GoType::pointer(GoType::named("external")),
@@ -1184,7 +1488,7 @@ mod tests {
 
     #[test]
     fn observe_calls_correct_sdk_method() {
-        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey");
+        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
         let rendered = print_file(&{
             let mut file = GoFile::new("p");
             file.decls.push(GoDecl::Func(f));
@@ -1198,7 +1502,7 @@ mod tests {
 
     #[test]
     fn create_calls_correct_sdk_method() {
-        let f = build_create_func(&auth_method_api_key(), "AuthMethodApiKey");
+        let f = build_create_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
         let mut file = GoFile::new("p");
         file.decls.push(GoDecl::Func(f));
         let rendered = print_file(&file);
@@ -1209,7 +1513,7 @@ mod tests {
 
     #[test]
     fn update_no_op_branch_for_resources_without_update_schema() {
-        let f = build_update_func(&role_no_update(), "Role");
+        let f = build_update_func(&role_no_update(), "Role", &ResourceShape::default());
         // Rendering: should NOT contain V2API call
         let mut file = GoFile::new("p");
         file.decls.push(GoDecl::Func(f));
@@ -1220,7 +1524,7 @@ mod tests {
 
     #[test]
     fn delete_calls_correct_sdk_method() {
-        let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey");
+        let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
         let mut file = GoFile::new("p");
         file.decls.push(GoDecl::Func(f));
         let rendered = print_file(&file);
@@ -1300,7 +1604,7 @@ mod tests {
 
     #[test]
     fn observe_body_shape() {
-        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey");
+        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
         // First two stmts: type-assert short decl, then the !ok if branch.
         assert!(matches!(
             f.body.stmts[0],
@@ -1335,7 +1639,7 @@ mod tests {
 
     #[test]
     fn observe_signature_correct() {
-        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey");
+        let f = build_observe_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
         assert_eq!(f.name, "Observe");
         let recv = f.recv.as_ref().unwrap();
         assert_eq!(recv.name, "e");
@@ -1357,7 +1661,7 @@ mod tests {
 
     #[test]
     fn create_signature_returns_external_creation() {
-        let f = build_create_func(&auth_method_api_key(), "AuthMethodApiKey");
+        let f = build_create_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
         assert_eq!(f.name, "Create");
         assert!(matches!(
             f.returns[0],
@@ -1368,7 +1672,7 @@ mod tests {
 
     #[test]
     fn delete_returns_external_delete_and_error_v1_18() {
-        let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey");
+        let f = build_delete_func(&auth_method_api_key(), "AuthMethodApiKey", &ResourceShape::default());
         assert_eq!(f.returns.len(), 2);
         assert!(matches!(
             f.returns[0],
