@@ -131,8 +131,35 @@ pub fn build_controller_file(
         .push(GoDecl::Func(build_update_func(resource, &kind)));
     file.decls
         .push(GoDecl::Func(build_delete_func(resource, &kind)));
+    file.decls.push(GoDecl::Func(build_disconnect_func()));
 
     file
+}
+
+fn build_disconnect_func() -> GoFuncDecl {
+    // crossplane-runtime v1.18 added Disconnect(ctx) error to the
+    // ExternalClient interface. The default no-op is correct for any
+    // SDK that doesn't hold long-lived resources beyond per-call
+    // request state — the akeyless SDK falls into this category.
+    let mut body = GoBlock::new();
+    body.push(GoStmt::Return(vec![GoExpr::nil()]));
+    GoFuncDecl {
+        name: "Disconnect".to_string(),
+        doc: Some(
+            "Disconnect releases any per-cluster client resources. The akeyless SDK\nholds no long-lived resources beyond per-call request state, so this is\na no-op. Required by crossplane-runtime v1.18+'s ExternalClient interface."
+                .to_string(),
+        ),
+        recv: Some(GoRecv {
+            name: "_".to_string(),
+            ty: GoType::pointer(GoType::named("external")),
+        }),
+        params: vec![GoParam {
+            name: "_".to_string(),
+            ty: GoType::qualified("context", "Context"),
+        }],
+        returns: vec![GoType::named("error")],
+        body,
+    }
 }
 
 fn build_external_struct_type() -> GoTypeDecl {
@@ -1114,6 +1141,7 @@ mod tests {
                 "Create".to_string(),
                 "Update".to_string(),
                 "Delete".to_string(),
+                "Disconnect".to_string(),
             ]
         );
     }
@@ -1202,6 +1230,19 @@ mod tests {
         // v1.18 return shape — both error paths return managed.ExternalDelete{}
         assert!(rendered.contains("return managed.ExternalDelete{}, err"));
         assert!(rendered.contains("return managed.ExternalDelete{}, errors.New("));
+    }
+
+    #[test]
+    fn controller_emits_disconnect_method_for_v1_18() {
+        // crossplane-runtime v1.18 added Disconnect(ctx) error to
+        // ExternalClient. *external must implement it; we emit a no-op.
+        let s = render_controller(
+            &auth_method_api_key(),
+            &akeyless_provider(),
+            &ControllerConfig::akeyless_default(),
+        );
+        assert!(s.contains("func (_ *external) Disconnect(_ context.Context) error {"));
+        assert!(s.contains("// no long-lived resources"));
     }
 
     #[test]
