@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use iac_forge::goast::{
     GoBlock, GoDecl, GoExpr, GoField, GoFile, GoFuncDecl, GoImport, GoLit, GoParam, GoRecv,
-    GoStmt, GoType, GoTypeBody, GoTypeDecl, print_file,
+    GoStmt, GoStructTag, GoType, GoTypeBody, GoTypeDecl, JsonTag, print_file,
 };
 use iac_forge::ir::{IacProvider, IacResource};
 use iac_forge::naming::{strip_provider_prefix, to_pascal_case};
@@ -534,8 +534,12 @@ pub fn build_controller_file(
 
     // Imports — stdlib first (printer groups), then third-party with aliases.
     file.imports.push(GoImport::plain("context"));
+    if !shape.stub {
+        file.imports.push(GoImport::plain("encoding/json"));
+    }
     file.imports.push(GoImport::plain("errors"));
     if !shape.stub {
+        file.imports.push(GoImport::plain("fmt"));
         file.imports.push(GoImport::plain("net/http"));
     }
     if shape.needs_strconv_import() {
@@ -588,6 +592,12 @@ pub fn build_controller_file(
         ),
     ));
 
+    // type akeylessCredentials struct { ... json tags ... } — used by Connect to
+    // decode the credential blob coming from the ProviderConfig's referenced Secret.
+    if !shape.stub {
+        file.decls
+            .push(GoDecl::Type(build_credentials_struct_type()));
+    }
     // type external struct { client *akeyless.APIClient ; token string }
     file.decls
         .push(GoDecl::Type(build_external_struct_type()));
@@ -771,6 +781,35 @@ fn build_disconnect_func() -> GoFuncDecl {
         }],
         returns: vec![GoType::named("error")],
         body,
+    }
+}
+
+fn build_credentials_struct_type() -> GoTypeDecl {
+    let mk = |name: &str, json_tag: &str| GoField {
+        name: Some(name.to_string()),
+        ty: GoType::named("string"),
+        doc: None,
+        markers: vec![],
+        tags: vec![GoStructTag::Json(JsonTag {
+            name: json_tag.to_string(),
+            omitempty: true,
+            inline: false,
+        })],
+    };
+    let fields = vec![
+        mk("AccessID", "access_id"),
+        mk("AccessKey", "access_key"),
+        mk("AccessIDDash", "access-id"),
+        mk("AccessKeyDash", "access-key"),
+    ];
+    GoTypeDecl {
+        name: "akeylessCredentials".to_string(),
+        doc: Some(
+            "akeylessCredentials is the JSON shape the controller expects from the\nProviderConfig's referenced Secret. Both akeyless's snake_case and the\nakeyless-CLI's hyphenated variants are accepted."
+                .to_string(),
+        ),
+        markers: vec![],
+        body: GoTypeBody::Struct(fields),
     }
 }
 
@@ -1082,22 +1121,216 @@ fn build_connect_func(kind: &str) -> GoFuncDecl {
         },
         else_body: None,
     });
-    // return &external{client: akeyless.NewAPIClient(cfg), token: string(creds)}, nil
     let _ = creds_unused();
+    // Decode the credential blob.
+    //
+    // Akeyless auth requires BOTH access_id AND access_key — only the
+    // access_id is identifying; the access_key is the secret. The SDK's
+    // `token` field expects a session token returned by /auth, NOT the
+    // raw access_key. We therefore parse `creds` as JSON carrying both
+    // fields, accepting either snake_case or akeyless-CLI-style hyphens:
+    //   {"access_id":"p-…","access_key":"…"}
+    //   {"access-id":"p-…","access-key":"…"}
+    body.push(GoStmt::Blank);
+    body.push(GoStmt::Comment(
+        "Decode the access-id + access-key from the credentials Secret.".to_string(),
+    ));
+    body.push(GoStmt::Comment(
+        "Both keys are required: /auth exchanges them for a session token.".to_string(),
+    ));
+    body.push(GoStmt::ShortDecl {
+        names: vec!["akCreds".to_string()],
+        values: vec![GoExpr::Composite {
+            ty: GoType::named("akeylessCredentials"),
+            fields: vec![],
+            addr_of: false,
+        }],
+    });
+    body.push(GoStmt::If {
+        init: Some(Box::new(GoStmt::ShortDecl {
+            names: vec!["err".to_string()],
+            values: vec![GoExpr::call(
+                GoExpr::path(&["json", "Unmarshal"]),
+                vec![
+                    GoExpr::ident("creds"),
+                    GoExpr::AddressOf(Box::new(GoExpr::ident("akCreds"))),
+                ],
+            )],
+        })),
+        cond: GoExpr::ident("err != nil"),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Return(vec![
+                GoExpr::nil(),
+                GoExpr::call(
+                    GoExpr::path(&["fmt", "Errorf"]),
+                    vec![
+                        GoExpr::str("akeyless credentials must be JSON {\"access_id\":\"...\",\"access_key\":\"...\"}: %w"),
+                        GoExpr::ident("err"),
+                    ],
+                ),
+            ]));
+            b
+        },
+        else_body: None,
+    });
+    body.push(GoStmt::ShortDecl {
+        names: vec!["accessID".to_string()],
+        values: vec![GoExpr::sel(GoExpr::ident("akCreds"), "AccessID")],
+    });
+    body.push(GoStmt::If {
+        init: None,
+        cond: GoExpr::ident("accessID == \"\""),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Expr(GoExpr::ident(
+                "accessID = akCreds.AccessIDDash",
+            )));
+            b
+        },
+        else_body: None,
+    });
+    body.push(GoStmt::ShortDecl {
+        names: vec!["accessKey".to_string()],
+        values: vec![GoExpr::sel(GoExpr::ident("akCreds"), "AccessKey")],
+    });
+    body.push(GoStmt::If {
+        init: None,
+        cond: GoExpr::ident("accessKey == \"\""),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Expr(GoExpr::ident(
+                "accessKey = akCreds.AccessKeyDash",
+            )));
+            b
+        },
+        else_body: None,
+    });
+    body.push(GoStmt::If {
+        init: None,
+        cond: GoExpr::ident("accessID == \"\" || accessKey == \"\""),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Return(vec![
+                GoExpr::nil(),
+                GoExpr::call(
+                    GoExpr::path(&["errors", "New"]),
+                    vec![GoExpr::str(
+                        "akeyless credentials missing access_id or access_key",
+                    )],
+                ),
+            ]));
+            b
+        },
+        else_body: None,
+    });
+    body.push(GoStmt::Blank);
+    // client := akeyless.NewAPIClient(cfg)
+    body.push(GoStmt::ShortDecl {
+        names: vec!["apiClient".to_string()],
+        values: vec![GoExpr::call(
+            GoExpr::path(&["akeyless", "NewAPIClient"]),
+            vec![GoExpr::ident("cfg")],
+        )],
+    });
+    // accessType := "access_key"  (declared as var so &accessType is well-typed)
+    body.push(GoStmt::ShortDecl {
+        names: vec!["accessType".to_string()],
+        values: vec![GoExpr::str("access_key")],
+    });
+    // authOut, _, err := apiClient.V2API.Auth(ctx).Auth(akeyless.Auth{...}).Execute()
+    body.push(GoStmt::ShortDecl {
+        names: vec![
+            "authOut".to_string(),
+            "_".to_string(),
+            "err".to_string(),
+        ],
+        values: vec![GoExpr::call(
+            GoExpr::sel(
+                GoExpr::call(
+                    GoExpr::sel(
+                        GoExpr::call(
+                            GoExpr::sel(
+                                GoExpr::sel(GoExpr::ident("apiClient"), "V2API"),
+                                "Auth",
+                            ),
+                            vec![GoExpr::ident("ctx")],
+                        ),
+                        "Auth",
+                    ),
+                    vec![GoExpr::Composite {
+                        ty: GoType::qualified("akeyless", "Auth"),
+                        fields: vec![
+                            (
+                                Some("AccessId".to_string()),
+                                GoExpr::AddressOf(Box::new(GoExpr::ident("accessID"))),
+                            ),
+                            (
+                                Some("AccessKey".to_string()),
+                                GoExpr::AddressOf(Box::new(GoExpr::ident("accessKey"))),
+                            ),
+                            (
+                                Some("AccessType".to_string()),
+                                GoExpr::AddressOf(Box::new(GoExpr::ident("accessType"))),
+                            ),
+                        ],
+                        addr_of: false,
+                    }],
+                ),
+                "Execute",
+            ),
+            vec![],
+        )],
+    });
+    body.push(GoStmt::If {
+        init: None,
+        cond: GoExpr::ident("err != nil"),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Return(vec![
+                GoExpr::nil(),
+                GoExpr::call(
+                    GoExpr::path(&["fmt", "Errorf"]),
+                    vec![
+                        GoExpr::str("akeyless /auth exchange failed: %w"),
+                        GoExpr::ident("err"),
+                    ],
+                ),
+            ]));
+            b
+        },
+        else_body: None,
+    });
+    body.push(GoStmt::If {
+        init: None,
+        cond: GoExpr::ident(
+            "authOut == nil || authOut.Token == nil || *authOut.Token == \"\"",
+        ),
+        body: {
+            let mut b = GoBlock::new();
+            b.push(GoStmt::Return(vec![
+                GoExpr::nil(),
+                GoExpr::call(
+                    GoExpr::path(&["errors", "New"]),
+                    vec![GoExpr::str("akeyless /auth returned empty session token")],
+                ),
+            ]));
+            b
+        },
+        else_body: None,
+    });
+    body.push(GoStmt::Blank);
     body.push(GoStmt::Return(vec![
         GoExpr::Composite {
             ty: GoType::named("external"),
             fields: vec![
-                (
-                    Some("client".to_string()),
-                    GoExpr::call(
-                        GoExpr::path(&["akeyless", "NewAPIClient"]),
-                        vec![GoExpr::ident("cfg")],
-                    ),
-                ),
+                (Some("client".to_string()), GoExpr::ident("apiClient")),
                 (
                     Some("token".to_string()),
-                    GoExpr::call(GoExpr::ident("string"), vec![GoExpr::ident("creds")]),
+                    GoExpr::Star(Box::new(GoExpr::sel(
+                        GoExpr::ident("authOut"),
+                        "Token",
+                    ))),
                 ),
             ],
             addr_of: true,
@@ -1978,6 +2211,7 @@ mod tests {
         assert_eq!(
             decl_names,
             vec![
+                "akeylessCredentials".to_string(),
                 "external".to_string(),
                 "Setup".to_string(),
                 "connector".to_string(),
@@ -2284,6 +2518,60 @@ mod tests {
             GoType::Qualified { ref pkg, ref name }
                 if pkg == "managed" && name == "ExternalClient",
         ));
+    }
+
+    #[test]
+    fn connect_func_calls_v2api_auth_with_credentials() {
+        // Render the full controller file and look for the structural shape of
+        // the /auth round-trip: short-decl naming `authOut, _, err` whose RHS
+        // selects `Execute` from a chain that hits both `Auth(ctx)` and
+        // `Auth(akeyless.Auth{...})`. We do not match on raw text — only the
+        // typed AST shape.
+        let f = build_controller_file(
+            &auth_method_api_key(),
+            &akeyless_provider(),
+            &ControllerConfig::akeyless_default(),
+        );
+        let connect = f.decls.iter().find_map(|d| match d {
+            GoDecl::Func(fd) if fd.name == "Connect" => Some(fd),
+            _ => None,
+        }).expect("Connect declared");
+        let auth_call = connect.body.stmts.iter().find_map(|s| match s {
+            GoStmt::ShortDecl { names, values } if names == &[
+                "authOut".to_string(),
+                "_".to_string(),
+                "err".to_string(),
+            ] => Some(values),
+            _ => None,
+        }).expect("authOut, _, err := … short-decl present");
+        // Verify it is a Call whose head selects "Execute"; we don't traverse
+        // the entire chain — the printer is round-trip-tested elsewhere.
+        let GoExpr::Call { fun, .. } = &auth_call[0] else {
+            panic!("expected a call expr");
+        };
+        let GoExpr::Selector { sel, .. } = fun.as_ref() else {
+            panic!("expected selector at the head");
+        };
+        assert_eq!(sel, "Execute", "auth chain must terminate at .Execute()");
+    }
+
+    #[test]
+    fn credentials_struct_type_emitted_with_four_json_tagged_fields() {
+        let f = build_controller_file(
+            &auth_method_api_key(),
+            &akeyless_provider(),
+            &ControllerConfig::akeyless_default(),
+        );
+        let cred = f.decls.iter().find_map(|d| match d {
+            GoDecl::Type(td) if td.name == "akeylessCredentials" => Some(td),
+            _ => None,
+        }).expect("akeylessCredentials type emitted");
+        let GoTypeBody::Struct(fields) = &cred.body else {
+            panic!("akeylessCredentials must be a struct")
+        };
+        assert_eq!(fields.len(), 4);
+        let names: Vec<&str> = fields.iter().filter_map(|f| f.name.as_deref()).collect();
+        assert_eq!(names, vec!["AccessID", "AccessKey", "AccessIDDash", "AccessKeyDash"]);
     }
 
     #[test]
