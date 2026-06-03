@@ -75,6 +75,7 @@ dependencies = [
 name = "crossplane-forge"
 version = "0.1.0"
 dependencies = [
+ "go-synthesizer",
  "iac-forge",
  "pretty_assertions",
  "serde",
@@ -136,6 +137,13 @@ dependencies = [
  "r-efi",
  "wasip2",
  "wasip3",
+]
+
+[[package]]
+name = "go-synthesizer"
+version = "0.1.0"
+dependencies = [
+ "synthesizer-core",
 ]
 
 [[package]]
@@ -414,6 +422,11 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "synthesizer-core"
+version = "0.1.0"
+source = "git+https://github.com/pleme-io/synthesizer-core#fa3d87b8cc551ace2545ee3da416061645ade435"
 
 [[package]]
 name = "takumi"

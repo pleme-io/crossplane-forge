@@ -23,7 +23,7 @@
 //!
 //! 12 methods per Kind.
 
-use iac_forge::goast::{
+use go_synthesizer::{
     GoBlock, GoDecl, GoExpr, GoFile, GoFuncDecl, GoImport, GoParam, GoRecv, GoStmt, GoType,
     print_file,
 };
