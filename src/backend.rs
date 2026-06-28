@@ -28,7 +28,7 @@ use crate::{crd, deepcopy_gen, managed_methods_gen, provider_gen, types_gen};
 ///   package/crds/<resource>-crd.yaml          ← legacy CRD YAML
 ///   package/crds/providerconfig-crd.yaml      ← legacy CRD YAML
 ///
-/// All Go output is built through `iac_forge::goast`; all Helm chart
+/// All Go output is built through `go_synthesizer`; all Helm chart
 /// metadata + values are built through typed serde structs; templated
 /// YAML is composed via `serde_yaml_ng::Value` trees. No `format!()` of
 /// emitted syntax anywhere — see the post-2026-05-06 substrate-hygiene

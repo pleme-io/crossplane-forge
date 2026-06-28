@@ -19,7 +19,7 @@
 //!      and at that point we either extend this emitter to handle
 //!      them OR migrate to controller-gen, both clean paths.
 
-use iac_forge::goast::{
+use go_synthesizer::{
     GoBlock, GoDecl, GoExpr, GoFile, GoFuncDecl, GoImport, GoLit, GoParam, GoRecv, GoStmt, GoType,
     print_file,
 };

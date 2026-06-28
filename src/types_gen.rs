@@ -7,11 +7,11 @@
 //! `xpv1.ResourceStatus` embedded), `<Kind>` itself, and `<Kind>List`.
 //! Plus a separate `GoFile` for the package's `groupversion_info.go`.
 //!
-//! Built entirely on top of [`iac_forge::goast`] — no `format!()`
+//! Built entirely on top of [`go_synthesizer`] — no `format!()`
 //! strings of Go syntax. Every kubebuilder marker is a typed
 //! [`KubeMarker`] variant, every JSON tag is a typed [`JsonTag`].
 
-use iac_forge::goast::{
+use go_synthesizer::{
     GoBlock, GoDecl, GoExpr, GoField, GoFile, GoFuncDecl, GoImport, GoLit, GoStmt, GoStructTag,
     GoType, GoTypeBody, GoTypeDecl, JsonTag, KubeMarker, ResourceScope, SubresourceKind, print_file,
 };
@@ -94,7 +94,7 @@ fn build_groupversion_info_file(
     // GoVarDecl emits standalone vars; this is fine even though Go
     // idiom prefers `var ( ... )` blocks. Slice 2 of goast can add
     // GoVarBlock; the standalone form is canonical too.
-    file.decls.push(GoDecl::Var(iac_forge::goast::GoVarDecl {
+    file.decls.push(GoDecl::Var(go_synthesizer::GoVarDecl {
         name: "GroupVersion".to_string(),
         ty: None,
         value: Some(GoExpr::Composite {
@@ -114,7 +114,7 @@ fn build_groupversion_info_file(
         doc: None,
         block_id: None,
     }));
-    file.decls.push(GoDecl::Var(iac_forge::goast::GoVarDecl {
+    file.decls.push(GoDecl::Var(go_synthesizer::GoVarDecl {
         name: "SchemeBuilder".to_string(),
         ty: None,
         value: Some(GoExpr::Composite {
@@ -128,7 +128,7 @@ fn build_groupversion_info_file(
         doc: None,
         block_id: None,
     }));
-    file.decls.push(GoDecl::Var(iac_forge::goast::GoVarDecl {
+    file.decls.push(GoDecl::Var(go_synthesizer::GoVarDecl {
         name: "AddToScheme".to_string(),
         ty: None,
         value: Some(GoExpr::Selector {
@@ -490,7 +490,7 @@ pub fn groupversion_file_path(resource: &IacResource, provider: &IacProvider) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iac_forge::goast::{KubeMarker, ResourceScope};
+    use go_synthesizer::{KubeMarker, ResourceScope};
     use iac_forge::ir::{AuthInfo, CrudInfo, IdentityInfo};
     use std::collections::BTreeMap;
 

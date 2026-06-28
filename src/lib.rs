@@ -23,6 +23,11 @@ pub mod deepcopy_gen;
 pub mod managed_methods_gen;
 /// Typed errors for CRD generation.
 pub mod error;
+/// The Go **macro-farm** surface — typed, serde-serializable Go-codegen
+/// specs ([`go_spec::GoSpec`]) that lower to [`go_synthesizer::GoFile`]
+/// and render through [`go_synthesizer::print_file`]. The Go analog of
+/// `tatara-rust-ast`'s `*DeriveSpec` family.
+pub mod go_spec;
 /// Provider-runtime scaffold emitter (ProviderConfig types, main.go,
 /// setup.go, go.mod, Helm chart files).
 pub mod provider_gen;
@@ -32,6 +37,10 @@ pub mod types_gen;
 pub use backend::CrossplaneBackend;
 pub use controller_gen::{ControllerConfig, render_controller};
 pub use error::CrdError;
+pub use go_spec::{
+    GoFieldSpec, GoFuncBodySpec, GoFuncSpec, GoImportSpec, GoItemSpec, GoMarkerSpec, GoParamSpec,
+    GoSpec, GoStructSpec, GoTagSpec, GoTypeSpec,
+};
 pub use provider_gen::{
     render_go_mod, render_helm_chart_yaml, render_helm_deployment_template, render_helm_rbac_template,
     render_helm_values_yaml, render_main_go, render_provider_config_types,

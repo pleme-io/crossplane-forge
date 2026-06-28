@@ -4,13 +4,13 @@
 //! wiring `Setup` function and the `connector` that resolves a
 //! `ProviderConfig` into an `external` client.
 //!
-//! Built entirely on top of [`iac_forge::goast`] — the file is
+//! Built entirely on top of [`go_synthesizer`] — the file is
 //! constructed as a typed [`GoFile`] tree, never as `format!()`
 //! strings of Go syntax.
 
 use std::collections::BTreeMap;
 
-use iac_forge::goast::{
+use go_synthesizer::{
     GoBlock, GoDecl, GoExpr, GoField, GoFile, GoFuncDecl, GoImport, GoLit, GoParam, GoRecv,
     GoStmt, GoStructTag, GoType, GoTypeBody, GoTypeDecl, JsonTag, print_file,
 };

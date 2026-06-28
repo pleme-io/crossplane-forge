@@ -75,6 +75,7 @@ dependencies = [
 name = "crossplane-forge"
 version = "0.1.0"
 dependencies = [
+ "go-synthesizer",
  "iac-forge",
  "pretty_assertions",
  "serde",
@@ -136,6 +137,13 @@ dependencies = [
  "r-efi",
  "wasip2",
  "wasip3",
+]
+
+[[package]]
+name = "go-synthesizer"
+version = "0.1.1"
+dependencies = [
+ "synthesizer-core",
 ]
 
 [[package]]
@@ -414,6 +422,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "synthesizer-core"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d61c6a42add42ba68340770985043123fa594ad86b0a02b613bd9c0de62bf2f"
 
 [[package]]
 name = "takumi"

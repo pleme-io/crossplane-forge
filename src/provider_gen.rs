@@ -13,7 +13,7 @@
 //!
 //! ## Substrate-hygiene posture (post-refactor 2026-05-06)
 //!
-//! Every Go file is built as a typed [`iac_forge::goast::GoFile`] tree
+//! Every Go file is built as a typed [`go_synthesizer::GoFile`] tree
 //! and rendered through `print_file`. Every YAML file is built either
 //! as a typed serde-derive struct (`Chart`, `HelmValues`) or as a
 //! [`serde_yaml_ng::Value`] tree composed via small typed helpers —
@@ -22,7 +22,7 @@
 use serde::{Deserialize, Serialize};
 use serde_yaml_ng::{Mapping, Value};
 
-use iac_forge::goast::{
+use go_synthesizer::{
     GoBlock, GoDecl, GoExpr, GoField, GoFile, GoFuncDecl, GoImport, GoLit, GoParam, GoStmt,
     GoStructTag, GoType, GoTypeBody, GoTypeDecl, GoVarDecl, JsonTag, KubeMarker, ResourceScope,
     SubresourceKind, print_file,
