@@ -1712,8 +1712,10 @@ fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape,
     let read_method = sdk_naming::go_method_name(&resource.crud.read_schema);
     let read_body_type = sdk_naming::go_body_type_name(&resource.crud.read_schema);
 
-    let observe_cr_name = if shape.body_uses_cr(CrudMethod::Read) { "cr" } else { "_" };
-    let mut body = type_assert_into_cr_named(kind, &observation_return_path(), observe_cr_name);
+    // Always "cr", never body_uses_cr-conditional: Observe unconditionally
+    // calls cr.SetConditions(xpv1.Available()) below, independent of
+    // whether the request body itself references cr.
+    let mut body = type_assert_into_cr_named(kind, &observation_return_path(), "cr");
     let (preamble, composite) = build_request_body(&read_body_type, shape, CrudMethod::Read, resource, body_sigs);
     for s in preamble {
         body.push(s);
