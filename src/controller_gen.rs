@@ -1712,7 +1712,8 @@ fn build_observe_func(resource: &IacResource, kind: &str, shape: &ResourceShape,
     let read_method = sdk_naming::go_method_name(&resource.crud.read_schema);
     let read_body_type = sdk_naming::go_body_type_name(&resource.crud.read_schema);
 
-    let mut body = type_assert_into_cr(kind, &observation_return_path());
+    let observe_cr_name = if shape.body_uses_cr(CrudMethod::Read) { "cr" } else { "_" };
+    let mut body = type_assert_into_cr_named(kind, &observation_return_path(), observe_cr_name);
     let (preamble, composite) = build_request_body(&read_body_type, shape, CrudMethod::Read, resource, body_sigs);
     for s in preamble {
         body.push(s);
@@ -1838,7 +1839,8 @@ fn build_create_func(resource: &IacResource, kind: &str, shape: &ResourceShape, 
     let create_method = sdk_naming::go_method_name(&resource.crud.create_schema);
     let create_body_type = sdk_naming::go_body_type_name(&resource.crud.create_schema);
 
-    let mut body = type_assert_into_cr(kind, &creation_return_path());
+    let create_cr_name = if shape.body_uses_cr(CrudMethod::Create) { "cr" } else { "_" };
+    let mut body = type_assert_into_cr_named(kind, &creation_return_path(), create_cr_name);
     let (preamble, composite) = build_request_body(&create_body_type, shape, CrudMethod::Create, resource, body_sigs);
     for s in preamble {
         body.push(s);
@@ -1962,7 +1964,8 @@ fn build_update_func(resource: &IacResource, kind: &str, shape: &ResourceShape, 
     let update_method = sdk_naming::go_method_name(update_schema);
     let update_body_type = sdk_naming::go_body_type_name(update_schema);
 
-    let mut body = type_assert_into_cr(kind, &update_return_path());
+    let update_cr_name = if shape.body_uses_cr(CrudMethod::Update) { "cr" } else { "_" };
+    let mut body = type_assert_into_cr_named(kind, &update_return_path(), update_cr_name);
     let (preamble, composite) = build_request_body(&update_body_type, shape, CrudMethod::Update, resource, body_sigs);
     for s in preamble {
         body.push(s);
@@ -2355,12 +2358,17 @@ fn type_assert_discard_cr(kind: &str, return_zero: &GoType) -> GoBlock {
     b
 }
 
-fn type_assert_into_cr(kind: &str, return_zero: &GoType) -> GoBlock {
-    // cr, ok := mg.(*v1alpha1.<Kind>)
+/// `cr, ok := mg.(*v1alpha1.<Kind>)` (or `_, ok := ...` when the
+/// caller's method body never reads `cr` — a `BodyTemplate::NoIdentifier`
+/// shape, see [`ResourceShape::body_uses_cr`] — pass `"_"` so the
+/// emitted Go doesn't trip the compiler's declared-and-not-used check,
+/// mirroring `build_delete_func`'s pre-existing `cr_name` pattern).
+fn type_assert_into_cr_named(kind: &str, return_zero: &GoType, cr_name: &str) -> GoBlock {
+    // cr, ok := mg.(*v1alpha1.<Kind>)   (or `_, ok := ...` when unused)
     // if !ok { return <ZeroOf>{}, errors.New("expected *v1alpha1.<Kind>") }
     let mut b = GoBlock::new();
     b.push(GoStmt::ShortDecl {
-        names: vec!["cr".to_string(), "ok".to_string()],
+        names: vec![cr_name.to_string(), "ok".to_string()],
         values: vec![GoExpr::TypeAssert {
             x: Box::new(GoExpr::ident("mg")),
             ty: GoType::pointer(GoType::qualified("v1alpha1", kind)),
