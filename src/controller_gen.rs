@@ -446,6 +446,123 @@ fn akeyless_resource_shape_overrides() -> BTreeMap<String, ResourceShape> {
             ),
     );
 
+    // kmip_client_v2: same shape as kmip_client — KmipCreateClient.Name
+    // string; KmipDescribeClient and KmipDeleteClient both Name *string.
+    // Missing entry caused a real E0308 (pointer/value mismatch) build
+    // failure, 2026-07-10 — a distinct TOML resource from kmip_client
+    // (v1), not a stale duplicate.
+    m.insert(
+        "kmip_client_v2".into(),
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Read,
+                MethodOverride {
+                    identifier_pointer: Some(true),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Delete,
+                MethodOverride {
+                    identifier_pointer: Some(true),
+                    ..Default::default()
+                },
+            ),
+    );
+
+    // kmip_environment_v2: same shape as kmip_environment — Read
+    // (KmipDescribeServer) and Delete (KmipDeleteServer) have no
+    // identifier field at all; Create (KmipServerSetup) uses Hostname.
+    // Missing entry caused a real E0559 (unknown field Name) build
+    // failure, 2026-07-10.
+    m.insert(
+        "kmip_environment_v2".into(),
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Read,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::NoIdentifier),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Create,
+                MethodOverride {
+                    identifier_field: Some("Hostname".to_string()),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Delete,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::NoIdentifier),
+                    ..Default::default()
+                },
+            ),
+    );
+
+    // gateway_log_forwarding_*: 11 near-identical singleton config
+    // resources (aws_s3/azure_analytics/datadog/elasticsearch/
+    // google_chronicle/logstash/logz_io/splunk/stdout/sumologic/syslog).
+    // Confirmed against the akeyless-go SDK: GatewayGetLogForwarding
+    // {Json,Token,UidToken} and every GatewayUpdateLogForwarding<X>
+    // variant (used for Create/Update/Delete alike — the OpenAPI exposes
+    // only an upsert endpoint, no separate create/delete; the resource
+    // TOML's own header comment names this) carry NO identifier field
+    // whatsoever, not even an alt-field — a genuine singleton, unlike
+    // kmip_environment which at least has Hostname on Create. All four
+    // CRUD methods use NoIdentifier. Missing entries caused real
+    // E0559 (unknown field Name) build failures across all 11, 2026-07-10.
+    let log_forwarding_shape = || {
+        ResourceShape::default()
+            .with_method_override(
+                CrudMethod::Read,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::NoIdentifier),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Create,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::NoIdentifier),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Update,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::NoIdentifier),
+                    ..Default::default()
+                },
+            )
+            .with_method_override(
+                CrudMethod::Delete,
+                MethodOverride {
+                    body_template: Some(BodyTemplate::NoIdentifier),
+                    ..Default::default()
+                },
+            )
+    };
+    for suffix in [
+        "aws_s3",
+        "azure_analytics",
+        "datadog",
+        "elasticsearch",
+        "google_chronicle",
+        "logstash",
+        "logz_io",
+        "splunk",
+        "stdout",
+        "sumologic",
+        "syslog",
+    ] {
+        m.insert(
+            format!("gateway_log_forwarding_{suffix}"),
+            log_forwarding_shape(),
+        );
+    }
+
     // account_custom_field: Read/Update/Delete bodies use Id int64;
     // Create uses Name string.
     let int64_id = || MethodOverride {
