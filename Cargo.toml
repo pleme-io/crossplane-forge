@@ -9,7 +9,7 @@ repository = "https://github.com/pleme-io/crossplane-forge"
 documentation = "https://docs.rs/crossplane-forge"
 readme = "README.md"
 license = "MIT"
-categories = ["development-tools", "code-generators"]
+categories = ["development-tools"]
 keywords = ["crossplane", "kubernetes", "crd", "codegen"]
 
 [lints.clippy]
