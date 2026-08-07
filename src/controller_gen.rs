@@ -2512,6 +2512,7 @@ mod tests {
                 import_field: "name".to_string(),
                 force_replace_fields: vec!["name".to_string()],
             },
+            read_mapping: Default::default(),
         }
     }
 
@@ -2537,6 +2538,7 @@ mod tests {
                 import_field: "name".to_string(),
                 force_replace_fields: vec!["name".to_string()],
             },
+            read_mapping: Default::default(),
         }
     }
 
@@ -2946,6 +2948,7 @@ mod tests {
                 enum_values: None,
                 read_path: None,
                 update_only: false,
+                ..Default::default()
             },
             IacAttribute {
                 canonical_name: "access_expires".to_string(),
@@ -2962,6 +2965,7 @@ mod tests {
                 enum_values: None,
                 read_path: None,
                 update_only: false,
+                ..Default::default()
             },
             IacAttribute {
                 canonical_name: "force_sub_claims".to_string(),
@@ -2978,6 +2982,7 @@ mod tests {
                 enum_values: None,
                 read_path: None,
                 update_only: false,
+                ..Default::default()
             },
             IacAttribute {
                 canonical_name: "computed_id".to_string(),
@@ -2994,6 +2999,7 @@ mod tests {
                 enum_values: None,
                 read_path: None,
                 update_only: false,
+                ..Default::default()
             },
             IacAttribute {
                 canonical_name: "tags".to_string(),
@@ -3010,6 +3016,7 @@ mod tests {
                 enum_values: None,
                 read_path: None,
                 update_only: false,
+                ..Default::default()
             },
         ];
         // Test M6.2 broad walk via the manual opt-in path (push_for_provider_fields=true)
@@ -3063,6 +3070,7 @@ mod tests {
                 enum_values: None,
                 read_path: None,
                 update_only: false,
+                ..Default::default()
             },
             IacAttribute {
                 canonical_name: "access_expires".to_string(),
@@ -3079,6 +3087,7 @@ mod tests {
                 enum_values: None,
                 read_path: None,
                 update_only: false,
+                ..Default::default()
             },
         ];
         let f = build_observe_func(&r, "AuthMethodApiKey", &ResourceShape::default(), &None);

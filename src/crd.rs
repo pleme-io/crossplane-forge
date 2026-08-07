@@ -578,6 +578,7 @@ mod tests {
                     enum_values: None,
                     read_path: None,
                     update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "value".to_string(),
@@ -591,6 +592,7 @@ mod tests {
                     enum_values: None,
                     read_path: None,
                     update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "tags".to_string(),
@@ -604,6 +606,7 @@ mod tests {
                     enum_values: None,
                     read_path: None,
                     update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "version".to_string(),
@@ -617,6 +620,7 @@ mod tests {
                     enum_values: None,
                     read_path: None,
                     update_only: false,
+                    ..Default::default()
                 },
             ],
             identity: IdentityInfo {
@@ -624,6 +628,7 @@ mod tests {
                 import_field: "name".to_string(),
                 force_replace_fields: vec!["name".to_string()],
             },
+            read_mapping: Default::default(),
         }
     }
 
@@ -994,6 +999,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "int_field".to_string(),
@@ -1002,6 +1008,7 @@ mod tests {
                     iac_type: IacType::Integer,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "float_field".to_string(),
@@ -1010,6 +1017,7 @@ mod tests {
                     iac_type: IacType::Float,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "bool_field".to_string(),
@@ -1018,6 +1026,7 @@ mod tests {
                     iac_type: IacType::Boolean,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "list_field".to_string(),
@@ -1026,6 +1035,7 @@ mod tests {
                     iac_type: IacType::List(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "set_field".to_string(),
@@ -1034,6 +1044,7 @@ mod tests {
                     iac_type: IacType::Set(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "map_field".to_string(),
@@ -1042,6 +1053,7 @@ mod tests {
                     iac_type: IacType::Map(Box::new(IacType::String)),
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "object_field".to_string(),
@@ -1056,10 +1068,12 @@ mod tests {
                             iac_type: IacType::String,
                             required: true, computed: false, sensitive: false, immutable: false,
                             optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                            ..Default::default()
                         }],
                     },
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "enum_field".to_string(),
@@ -1071,6 +1085,7 @@ mod tests {
                     },
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "any_field".to_string(),
@@ -1079,6 +1094,7 @@ mod tests {
                     iac_type: IacType::Any,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
             ],
             identity: IdentityInfo {
@@ -1086,6 +1102,7 @@ mod tests {
                 import_field: "str_field".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         }
     }
 
@@ -1155,6 +1172,7 @@ mod tests {
                 import_field: "id".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -1181,6 +1199,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "value".to_string(),
@@ -1189,6 +1208,7 @@ mod tests {
                     iac_type: IacType::Integer,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
             ],
         });
@@ -1243,12 +1263,14 @@ mod tests {
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "method".to_string(),
                 import_field: "method".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         }];
         let data_sources: Vec<IacDataSource> = vec![];
 
@@ -1327,12 +1349,14 @@ mod tests {
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: true, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "secret".to_string(),
                 import_field: "secret".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -1370,12 +1394,14 @@ mod tests {
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: true, immutable: true,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "key".to_string(),
                 import_field: "key".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -1414,12 +1440,14 @@ mod tests {
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: true, immutable: true,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "token".to_string(),
                 import_field: "token".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -1567,6 +1595,7 @@ mod tests {
                 iac_type: IacType::Integer,
                 required: true, computed: false, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
         })));
         assert_eq!(schema["type"], "array");
@@ -1588,6 +1617,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "opt_b".to_string(),
@@ -1596,6 +1626,7 @@ mod tests {
                     iac_type: IacType::Boolean,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
             ],
         });
@@ -1717,6 +1748,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "id".to_string(),
@@ -1725,6 +1757,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: false, computed: true, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "secret_val".to_string(),
@@ -1733,6 +1766,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: true, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
             ],
             identity: IdentityInfo {
@@ -1740,6 +1774,7 @@ mod tests {
                 import_field: "id".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -1785,12 +1820,14 @@ mod tests {
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: true, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "secret".to_string(),
                 import_field: "secret".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -1828,12 +1865,14 @@ mod tests {
                 iac_type: IacType::Integer,
                 required: false, computed: true, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "count".to_string(),
                 import_field: "count".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -2017,6 +2056,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: false, computed: true, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "user_input".to_string(),
@@ -2025,6 +2065,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
             ],
             identity: IdentityInfo {
@@ -2032,6 +2073,7 @@ mod tests {
                 import_field: "server_id".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -2090,6 +2132,7 @@ mod tests {
                 iac_type: IacType::String,
                 required: false, computed: false, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
         })));
         assert_eq!(schema["type"], "object");
@@ -2117,6 +2160,7 @@ mod tests {
                 iac_type: IacType::Boolean,
                 required: false, computed: false, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
         });
         assert!(
@@ -2150,6 +2194,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "a_field".to_string(),
@@ -2158,6 +2203,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: true, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "m_field".to_string(),
@@ -2166,6 +2212,7 @@ mod tests {
                     iac_type: IacType::String,
                     required: false, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 },
             ],
             identity: IdentityInfo {
@@ -2173,6 +2220,7 @@ mod tests {
                 import_field: "z_field".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -2212,12 +2260,14 @@ mod tests {
                 iac_type: IacType::List(Box::new(IacType::String)),
                 required: false, computed: false, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "tags".to_string(),
                 import_field: "tags".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -2256,12 +2306,14 @@ mod tests {
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: true,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "id".to_string(),
                 import_field: "id".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "akeyless", "akeyless.crossplane.io", "v1alpha1")
@@ -2378,6 +2430,7 @@ mod tests {
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             },
             IacAttribute {
                 api_name: "computed_id".into(),
@@ -2386,6 +2439,7 @@ mod tests {
                 iac_type: IacType::String,
                 required: false, computed: true, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             },
         ];
         let (props, required) = build_for_provider(&attrs);
@@ -2405,6 +2459,7 @@ mod tests {
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             },
             IacAttribute {
                 api_name: "computed_id".into(),
@@ -2413,6 +2468,7 @@ mod tests {
                 iac_type: IacType::String,
                 required: false, computed: true, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             },
         ];
         let props = build_at_provider(&attrs);
@@ -2450,6 +2506,7 @@ mod tests {
                     },
                     required: true, computed: false, sensitive: false, immutable: false,
                     optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                    ..Default::default()
                 }],
             }),
         )))));
@@ -2516,12 +2573,14 @@ mod tests {
                 iac_type: IacType::String,
                 required: true, computed: false, sensitive: false, immutable: false,
                 optional: false, json_encoded: false, default_value: None, enum_values: None, read_path: None, update_only: false,
+                ..Default::default()
             }],
             identity: IdentityInfo {
                 id_field: "bucket".into(),
                 import_field: "bucket".into(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         };
 
         let yaml = generate_resource_crd(&resource, "aws", "aws.crossplane.io", "v1alpha1")

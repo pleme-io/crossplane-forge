@@ -1175,6 +1175,7 @@ mod tests {
                 import_field: "name".to_string(),
                 force_replace_fields: vec![],
             },
+            read_mapping: Default::default(),
         }
     }
 

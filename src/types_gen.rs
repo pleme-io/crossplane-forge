@@ -537,6 +537,7 @@ mod tests {
                     enum_values: None,
                     read_path: None,
                     update_only: false,
+                    ..Default::default()
                 },
                 IacAttribute {
                     api_name: "access-id".to_string(),
@@ -553,6 +554,7 @@ mod tests {
                     enum_values: None,
                     read_path: None,
                     update_only: false,
+                    ..Default::default()
                 },
             ],
             identity: IdentityInfo {
@@ -560,6 +562,7 @@ mod tests {
                 import_field: "name".to_string(),
                 force_replace_fields: vec!["name".to_string()],
             },
+            read_mapping: Default::default(),
         }
     }
 

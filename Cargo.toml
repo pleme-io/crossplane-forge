@@ -16,17 +16,14 @@ keywords = ["crossplane", "kubernetes", "crd", "codegen"]
 pedantic = "warn"
 
 [dependencies]
-iac-forge = { git = "https://github.com/pleme-io/iac-forge" }
-go-synthesizer = { git = "https://github.com/pleme-io/go-synthesizer" }
+iac-forge = "0.1"
+go-synthesizer = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml_ng = "0.10"
 thiserror = "2.0.18"
 toml = "0.8"
 
-# TEMP local override — remove once go-synthesizer feat/canonicalize-go-ast is merged+published.
-[patch."https://github.com/pleme-io/go-synthesizer"]
-go-synthesizer = { path = "../go-synthesizer" }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
