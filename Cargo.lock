@@ -67,7 +67,7 @@ dependencies = [
 
 [[package]]
 name = "crossplane-forge"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "go-synthesizer",
  "iac-forge",

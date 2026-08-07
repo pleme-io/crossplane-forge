@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "895cdbcb6fd4062c19cb4b65886dbaabf97761e686388dc0433a94305aebd4e1",
+  "cargo_lock_sha256": "a9140f434d74933a65fc40f5334688992859869be51590b17d090df192bcea73",
   "manifest_sha256": {
-    "Cargo.toml": "79603a68506544d56fe2937c3782ef41c07c71819d5f9a5ae5cdb3a5dfdb3f64"
+    "Cargo.toml": "516f8f567d75d8009083c8dd22c2b14caa0e769c80b1d2b0fb2d23565141778f"
   },
   "target_resolves": {
     "base": {
@@ -61,7 +61,7 @@
           "std"
         ]
       },
-      "crossplane-forge-0.1.0": {
+      "crossplane-forge-0.1.1": {
         "runtime_dependencies": [
           {
             "name": "go_synthesizer",
@@ -2355,7 +2355,7 @@
     "cpufeatures-0.3.0": {
       "edition": "2024"
     },
-    "crossplane-forge-0.1.0": {
+    "crossplane-forge-0.1.1": {
       "edition": "2024",
       "lib_target": {
         "name": "crossplane_forge",
