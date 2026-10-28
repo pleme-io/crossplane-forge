@@ -16,11 +16,11 @@
 //! Every Go file is built as a typed [`go_synthesizer::GoFile`] tree
 //! and rendered through `print_file`. Every YAML file is built either
 //! as a typed serde-derive struct (`Chart`, `HelmValues`) or as a
-//! [`serde_yaml_ng::Value`] tree composed via small typed helpers —
+//! [`serde_norway::Value`] tree composed via small typed helpers —
 //! never as `format!()` strings of YAML / Go syntax.
 
 use serde::{Deserialize, Serialize};
-use serde_yaml_ng::{Mapping, Value};
+use serde_norway::{Mapping, Value};
 
 use go_synthesizer::{
     GoBlock, GoDecl, GoExpr, GoField, GoFile, GoFuncDecl, GoImport, GoLit, GoParam, GoStmt,
@@ -80,14 +80,14 @@ pub fn render_go_mod(provider: &IacProvider, config: &ControllerConfig) -> Strin
 pub fn render_helm_chart_yaml(provider: &IacProvider, config: &ControllerConfig) -> String {
     let _ = config;
     let c = build_helm_chart(provider);
-    serde_yaml_ng::to_string(&c).expect("Chart serialization is infallible")
+    serde_norway::to_string(&c).expect("Chart serialization is infallible")
 }
 
 #[must_use]
 pub fn render_helm_values_yaml(provider: &IacProvider, config: &ControllerConfig) -> String {
     let _ = config;
     let v = build_helm_values(provider);
-    serde_yaml_ng::to_string(&v).expect("Values serialization is infallible")
+    serde_norway::to_string(&v).expect("Values serialization is infallible")
 }
 
 #[must_use]
@@ -96,14 +96,14 @@ pub fn render_helm_deployment_template(
     config: &ControllerConfig,
 ) -> String {
     let _ = (provider, config);
-    serde_yaml_ng::to_string(&build_helm_deployment_value())
+    serde_norway::to_string(&build_helm_deployment_value())
         .expect("Deployment YAML serialization is infallible")
 }
 
 #[must_use]
 pub fn render_helm_rbac_template(provider: &IacProvider, config: &ControllerConfig) -> String {
     let _ = (provider, config);
-    serde_yaml_ng::to_string(&build_helm_rbac_value())
+    serde_norway::to_string(&build_helm_rbac_value())
         .expect("RBAC YAML serialization is infallible")
 }
 
@@ -1045,7 +1045,7 @@ pub fn build_helm_values(provider: &IacProvider) -> HelmValues {
     }
 }
 
-// ── Helm template-YAML builders (serde_yaml_ng::Value trees) ─────────────
+// ── Helm template-YAML builders (serde_norway::Value trees) ─────────────
 
 #[must_use]
 pub fn build_helm_deployment_value() -> Value {
@@ -1368,9 +1368,9 @@ mod tests {
     #[test]
     fn helm_chart_struct_round_trips_through_yaml() {
         let c = build_helm_chart(&provider());
-        let yaml = serde_yaml_ng::to_string(&c).unwrap();
+        let yaml = serde_norway::to_string(&c).unwrap();
         // Round-trip back to a struct
-        let parsed: Chart = serde_yaml_ng::from_str(&yaml).unwrap();
+        let parsed: Chart = serde_norway::from_str(&yaml).unwrap();
         assert_eq!(c, parsed);
     }
 
@@ -1397,12 +1397,12 @@ mod tests {
     #[test]
     fn helm_values_round_trips() {
         let v = build_helm_values(&provider());
-        let yaml = serde_yaml_ng::to_string(&v).unwrap();
-        let parsed: HelmValues = serde_yaml_ng::from_str(&yaml).unwrap();
+        let yaml = serde_norway::to_string(&v).unwrap();
+        let parsed: HelmValues = serde_norway::from_str(&yaml).unwrap();
         assert_eq!(v, parsed);
     }
 
-    // ── Helm templates (serde_yaml_ng::Value trees) ─────────────────────
+    // ── Helm templates (serde_norway::Value trees) ─────────────────────
 
     #[test]
     fn helm_deployment_is_apps_v1_deployment() {

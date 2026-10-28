@@ -74,7 +74,7 @@ dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
- "serde_yaml_ng",
+ "serde_norway",
  "tempfile",
  "thiserror",
  "toml",
@@ -142,9 +142,9 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "iac-forge"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d7debe94753bde9ad1d60735d39aa96af70e98e19cac8df295d41408de29703"
+checksum = "0ccb32efb969464e0befcfa47140dbd98e2b05efef384d82b66c2cc84c0f4af2"
 dependencies = [
  "blake3",
  "meimei",
@@ -206,24 +206,24 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openapi-forge"
-version = "0.1.7"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba0d692bfa4a3bcd8d438a32137df663300b3c75b8bd282b2164b0bddf30de7f"
+checksum = "8012994858a5b3bc8f1e00713defc391a86b075916013302e62dbd7d60dd8d85"
 dependencies = [
  "indexmap",
  "pleme-io-takumi",
  "sekkei",
  "serde",
  "serde_json",
- "serde_yaml_ng",
+ "serde_norway",
  "thiserror",
 ]
 
 [[package]]
 name = "pleme-io-takumi"
-version = "0.1.2"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffaca7708d11e770b80cc69993aaa791a9bfcd61ec138f0be9e364177384ab42"
+checksum = "f62dde6433e76e0c4a8bc1919dadc74d8fa5679107217851a6aac72416556538"
 dependencies = [
  "indexmap",
  "sekkei",
@@ -286,13 +286,13 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sekkei"
-version = "0.1.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c292eaa6530dcd2f082f7812cb50bbddc9248a4f1dfb43b6d8c28653ecffd414"
+checksum = "e5d0101ba01060b127d14d61dbf7f7394ad86dbf5c70fc7fd6fcb98ae14d919c"
 dependencies = [
  "serde",
  "serde_json",
- "serde_yaml_ng",
+ "serde_norway",
  "thiserror",
 ]
 
@@ -340,25 +340,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_norway"
+version = "0.9.42"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e408f29489b5fd500fab51ff1484fc859bb655f32c671f307dcd733b72e8168c"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml-norway",
+]
+
+[[package]]
 name = "serde_spanned"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "serde_yaml_ng"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b4db627b98b36d4203a7b458cf3573730f2bb591b28871d916dfa9efabfd41f"
-dependencies = [
- "indexmap",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
 ]
 
 [[package]]
@@ -465,10 +465,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
+name = "unsafe-libyaml-norway"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+checksum = "b39abd59bf32521c7f2301b52d05a6a2c975b6003521cbd0c6dc1582f0a22104"
 
 [[package]]
 name = "windows-link"

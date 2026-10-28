@@ -30,7 +30,7 @@ use crate::{crd, deepcopy_gen, managed_methods_gen, provider_gen, types_gen};
 ///
 /// All Go output is built through `go_synthesizer`; all Helm chart
 /// metadata + values are built through typed serde structs; templated
-/// YAML is composed via `serde_yaml_ng::Value` trees. No `format!()` of
+/// YAML is composed via `serde_norway::Value` trees. No `format!()` of
 /// emitted syntax anywhere — see the post-2026-05-06 substrate-hygiene
 /// reset notes in [`crate::types_gen`], [`crate::controller_gen`],
 /// [`crate::provider_gen`].

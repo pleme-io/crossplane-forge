@@ -4,7 +4,7 @@
 pub enum CrdError {
     /// YAML serialization failed.
     #[error("YAML serialization failed: {0}")]
-    YamlSerialization(#[from] serde_yaml_ng::Error),
+    YamlSerialization(#[from] serde_norway::Error),
 
     /// JSON-to-Value conversion failed (e.g. inside `sort_json_keys`).
     #[error("JSON conversion failed: {0}")]
@@ -23,7 +23,7 @@ mod tests {
 
     #[test]
     fn yaml_error_display() {
-        let yaml_err: Result<serde_json::Value, _> = serde_yaml_ng::from_str("{{bad");
+        let yaml_err: Result<serde_json::Value, _> = serde_norway::from_str("{{bad");
         let crd_err = CrdError::from(yaml_err.unwrap_err());
         let msg = crd_err.to_string();
         assert!(msg.starts_with("YAML serialization failed:"), "got: {msg}");
@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn yaml_error_from_conversion() {
-        let yaml_err: Result<serde_json::Value, _> = serde_yaml_ng::from_str("{{bad");
+        let yaml_err: Result<serde_json::Value, _> = serde_norway::from_str("{{bad");
         let crd_err: CrdError = yaml_err.unwrap_err().into();
         assert!(matches!(crd_err, CrdError::YamlSerialization(_)));
     }

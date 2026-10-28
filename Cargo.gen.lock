@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "a9140f434d74933a65fc40f5334688992859869be51590b17d090df192bcea73",
+  "cargo_lock_sha256": "04701bd73faafd7c9eeb5abd8357ae8f1073b1e97f6239288ecd649940b1a9a2",
   "manifest_sha256": {
-    "Cargo.toml": "516f8f567d75d8009083c8dd22c2b14caa0e769c80b1d2b0fb2d23565141778f"
+    "Cargo.toml": "fd3fd5b516ffc9a1ebc3c9cc93de085e5229cb888c5b2db8d3b2ea05519718c4"
   },
   "target_resolves": {
     "base": {
@@ -75,7 +75,7 @@
           },
           {
             "name": "iac_forge",
-            "package_key": "iac-forge-0.1.5",
+            "package_key": "iac-forge-0.1.6",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -106,8 +106,8 @@
             "tree": "target"
           },
           {
-            "name": "serde_yaml_ng",
-            "package_key": "serde_yaml_ng-0.10.0",
+            "name": "serde_norway",
+            "package_key": "serde_norway-0.9.42",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -318,7 +318,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "iac-forge-0.1.5": {
+      "iac-forge-0.1.6": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -342,7 +342,7 @@
           },
           {
             "name": "openapi_forge",
-            "package_key": "openapi-forge-0.1.7",
+            "package_key": "openapi-forge-0.1.9",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -352,7 +352,7 @@
           },
           {
             "name": "takumi",
-            "package_key": "pleme-io-takumi-0.1.2",
+            "package_key": "pleme-io-takumi-0.1.6",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -482,7 +482,7 @@
           "std"
         ]
       },
-      "openapi-forge-0.1.7": {
+      "openapi-forge-0.1.9": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -498,7 +498,7 @@
           },
           {
             "name": "takumi",
-            "package_key": "pleme-io-takumi-0.1.2",
+            "package_key": "pleme-io-takumi-0.1.6",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -508,7 +508,7 @@
           },
           {
             "name": "sekkei",
-            "package_key": "sekkei-0.1.1",
+            "package_key": "sekkei-0.2.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -539,8 +539,8 @@
             "tree": "target"
           },
           {
-            "name": "serde_yaml_ng",
-            "package_key": "serde_yaml_ng-0.10.0",
+            "name": "serde_norway",
+            "package_key": "serde_norway-0.9.42",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -562,7 +562,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "pleme-io-takumi-0.1.2": {
+      "pleme-io-takumi-0.1.6": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -578,7 +578,7 @@
           },
           {
             "name": "sekkei",
-            "package_key": "sekkei-0.1.1",
+            "package_key": "sekkei-0.2.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -684,7 +684,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "sekkei-0.1.1": {
+      "sekkei-0.2.2": {
         "runtime_dependencies": [
           {
             "name": "serde",
@@ -709,8 +709,8 @@
             "tree": "target"
           },
           {
-            "name": "serde_yaml_ng",
-            "package_key": "serde_yaml_ng-0.10.0",
+            "name": "serde_norway",
+            "package_key": "serde_norway-0.9.42",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -870,25 +870,7 @@
           "std"
         ]
       },
-      "serde_spanned-0.6.9": {
-        "runtime_dependencies": [
-          {
-            "name": "serde",
-            "package_key": "serde-1.0.229",
-            "kind": "normal",
-            "features": [],
-            "uses_default_features": true,
-            "optional": true,
-            "target": null,
-            "tree": "target"
-          }
-        ],
-        "build_dependencies": [],
-        "features": [
-          "serde"
-        ]
-      },
-      "serde_yaml_ng-0.10.0": {
+      "serde_norway-0.9.42": {
         "runtime_dependencies": [
           {
             "name": "indexmap",
@@ -931,8 +913,8 @@
             "tree": "target"
           },
           {
-            "name": "unsafe_libyaml",
-            "package_key": "unsafe-libyaml-0.2.11",
+            "name": "unsafe_libyaml_norway",
+            "package_key": "unsafe-libyaml-norway-0.2.15",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -943,6 +925,24 @@
         ],
         "build_dependencies": [],
         "features": []
+      },
+      "serde_spanned-0.6.9": {
+        "runtime_dependencies": [
+          {
+            "name": "serde",
+            "package_key": "serde-1.0.229",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": true,
+            "target": null,
+            "tree": "target"
+          }
+        ],
+        "build_dependencies": [],
+        "features": [
+          "serde"
+        ]
       },
       "shlex-2.0.1": {
         "runtime_dependencies": [],
@@ -1270,7 +1270,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "unsafe-libyaml-0.2.11": {
+      "unsafe-libyaml-norway-0.2.15": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -2387,7 +2387,7 @@
     "hashbrown-0.17.1": {
       "edition": "2024"
     },
-    "iac-forge-0.1.5": {
+    "iac-forge-0.1.6": {
       "edition": "2024"
     },
     "indexmap-2.14.0": {
@@ -2412,10 +2412,10 @@
     "once_cell-1.21.4": {
       "edition": "2021"
     },
-    "openapi-forge-0.1.7": {
+    "openapi-forge-0.1.9": {
       "edition": "2024"
     },
-    "pleme-io-takumi-0.1.2": {
+    "pleme-io-takumi-0.1.6": {
       "edition": "2024"
     },
     "pretty_assertions-1.4.1": {
@@ -2436,7 +2436,7 @@
     "ryu-1.0.23": {
       "edition": "2021"
     },
-    "sekkei-0.1.1": {
+    "sekkei-0.2.2": {
       "edition": "2024"
     },
     "serde-1.0.229": {
@@ -2455,10 +2455,10 @@
       "edition": "2021",
       "build_script": "build.rs"
     },
-    "serde_spanned-0.6.9": {
+    "serde_norway-0.9.42": {
       "edition": "2021"
     },
-    "serde_yaml_ng-0.10.0": {
+    "serde_spanned-0.6.9": {
       "edition": "2021"
     },
     "shlex-2.0.1": {
@@ -2496,7 +2496,7 @@
     "unicode-ident-1.0.24": {
       "edition": "2021"
     },
-    "unsafe-libyaml-0.2.11": {
+    "unsafe-libyaml-norway-0.2.15": {
       "edition": "2021",
       "binaries": [
         {
